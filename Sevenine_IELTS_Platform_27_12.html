@@ -4919,7 +4919,9 @@ function buildScoreboardUI(el, attempts, userMap) {
   const filtered = attempts.filter(a => {
     const test = ALL_TESTS.find(t=>t.id===a.test_id);
     if (!test) return false;
-    const tt = test.test_type || '';
+    // Normalise type: hardcoded MOCK_TESTS use the legacy `type` field (e.g. 'writing_only',
+    // 'reading_only'); DB tests use `test_type`. Without the fallback these are dropped.
+    const tt = test.test_type || test.type || '';
     if (isFull)    return tt === 'full' && a.overall_band;
     if (isMiniL)   return tt === 'listening_only';
     if (isMiniR)   return tt === 'reading_only';
@@ -7843,7 +7845,7 @@ async function loadAdminResults() {
       const testTitle = (ALL_TESTS.find(t=>t.id===a.test_id)||{}).title||'';
       const matchSearch = !gq || name.includes(gq) || testTitle.toLowerCase().includes(gq);
       const test = ALL_TESTS.find(t=>t.id===a.test_id);
-      const tt = test?.test_type || '';
+      const tt = test?.test_type || test?.type || '';
       // 'writing' filter groups all writing-dedicated test types (full tests keep their own filter).
       const WRITING_TYPES = ['writing_full','writing_only','task1_only','task2_only'];
       const matchType = typeF === 'all' || tt === typeF || (typeF === 'writing' && WRITING_TYPES.includes(tt));
