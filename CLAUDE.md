@@ -12,7 +12,7 @@ Brand: DM Serif Display + DM Sans, primary blue `#007AFF`, "Seve**n**ine" wordma
 
 Two independent surfaces, two different deploy models:
 
-- **The HTML file** (`Sevenine_IELTS_Platform_28_80_2.html`) — changes go live ONLY
+- **The HTML file** (`Sevenine_IELTS_Platform_27_12.html`) — changes go live ONLY
   after you commit + push to the GitHub Pages repo. Nothing you edit here affects
   students until you publish.
 - **The Supabase database** — every write is live IMMEDIATELY.
@@ -118,7 +118,7 @@ which is why old ones desynced.)
    while((m=re.exec(h))){i++;const c=m[1];if(/^\s*$/.test(c))continue;
    if(/\b(import|export)\b/.test(c)&&!/function|var|let|const|=>/.test(c))continue;
    try{new vm.Script(c)}catch(e){bad++;console.log("ERR #"+i,e.message)}}
-   console.log("blocks",i,"errors",bad)' Sevenine_IELTS_Platform_28_80_2.html
+   console.log("blocks",i,"errors",bad)' Sevenine_IELTS_Platform_27_12.html
    ```
 3. DB changes: verify with a read-back `select` after every write.
 4. To deploy the HTML: commit + push to the GitHub Pages repo. State clearly in
