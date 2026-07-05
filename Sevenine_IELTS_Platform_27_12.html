@@ -925,6 +925,7 @@ select.editor-input{cursor:pointer;}
             <option value="full">Full tests</option>
             <option value="listening_only">Mini listening</option>
             <option value="reading_only">Mini reading</option>
+            <option value="writing">Writing</option>
           </select>
         </div>
       </div>
@@ -3531,27 +3532,48 @@ const MOCK_TESTS = [
   }];
 
 let ALL_TESTS = [...MOCK_TESTS];
+// Dashboard load fetches METADATA ONLY — every column except the two heavy JSONB
+// blobs (listening_data ~1.4MB, writing_data ~0.45MB). reading_data is tiny (~25KB
+// total) and needed for the mini-reading type-filter chips, so we keep it. The heavy
+// blobs are fetched per-test on demand via hydrateTest() when a test is actually
+// opened/graded/edited. This cuts the login payload from ~1.9MB to ~27KB.
+const TEST_META_COLS = 'id,title,description,status,test_type,time_listening,time_reading,time_writing,reading_data,created_at,listening_q_types,reading_q_types,scanned_by_ai,t1_type,t1_topic,topic,subtype';
+
 async function loadSupabaseTests() {
   try {
-    const remote = await db('GET', 'tests', null, 'status=eq.published&order=created_at.asc');
+    const remote = await db('GET', 'tests', null, 'status=eq.published&order=created_at.asc&select=' + TEST_META_COLS);
     if (Array.isArray(remote) && remote.length > 0) {
+      // Mark DB rows as needing on-demand hydration of the stripped heavy blobs.
+      remote.forEach(t => { t._needsHydration = true; });
       const remoteIds = new Set(remote.map(t => t.id));
       const localKept = ALL_TESTS.filter(t => !remoteIds.has(t.id));
       ALL_TESTS = [...localKept, ...remote];
-      // Debug: log what mini tests look like
-      remote.forEach(t => {
-        const type = t.test_type || t.type || 'unknown';
-        if (type === 'listening_only' || type === 'reading_only') {
-          const secs = t.listening_data?.sections || [];
-          const passages = t.reading_data?.passages || [];
-          console.log('[MINI TEST]', t.id, t.title, 'type:', type,
-            'sections:', secs.length, secs.map(s => ({id:s.id, hasQ: !!(s.questions_html||s.questions)})),
-            'passages:', passages.length, passages.map(p => ({id:p.id, hasQ: !!(p.questions_html||p.questions)}))
-          );
-        }
-      });
     }
   } catch(e) { ALL_TESTS = [...MOCK_TESTS]; }
+}
+
+// Fetch the heavy JSONB blobs (listening_data, writing_data) for a single test and
+// merge them into its ALL_TESTS entry. Idempotent + cached: hardcoded MOCK_TESTS and
+// already-hydrated tests are no-ops. Call (and await) this before any screen that
+// reads a test's listening/writing data: openTestSection, showResultsView,
+// showGradeView, openEditTestModal.
+async function hydrateTest(testId) {
+  const t = ALL_TESTS.find(x => x.id === testId);
+  if (!t || !t._needsHydration || t._hydrated) return t || null;
+  try {
+    const rows = await db('GET', 'tests', null,
+      'id=eq.' + encodeURIComponent(testId) + '&select=listening_data,writing_data,reading_data');
+    if (Array.isArray(rows) && rows.length) {
+      if (rows[0].listening_data != null) t.listening_data = rows[0].listening_data;
+      if (rows[0].writing_data   != null) t.writing_data   = rows[0].writing_data;
+      if (rows[0].reading_data   != null) t.reading_data   = rows[0].reading_data;
+    }
+    t._hydrated = true;
+  } catch(e) {
+    console.error('hydrateTest failed for', testId, e);
+    // Leave _hydrated false so a later attempt can retry.
+  }
+  return t;
 }
 
 function convertPlainQuestionsToHTML(raw, passageId, idPrefix) {
@@ -4901,7 +4923,7 @@ function buildScoreboardUI(el, attempts, userMap) {
     if (isFull)    return tt === 'full' && a.overall_band;
     if (isMiniL)   return tt === 'listening_only';
     if (isMiniR)   return tt === 'reading_only';
-    if (isWriting) return (tt === 'full' || tt === 'writing_full' || tt === 'writing_only') && (a.writing_task1_score || a.writing_task2_score);
+    if (isWriting) return (tt === 'full' || tt === 'writing_full' || tt === 'writing_only' || tt === 'task1_only' || tt === 'task2_only') && (a.writing_task1_score != null || a.writing_task2_score != null);
     return false;
   });
 
@@ -5572,10 +5594,12 @@ let currentReadingPassage = 'p1';
 let currentWritingTask = 't1';
 let readingMcAnswers = {}, readingTfngAnswers = {}, readingMsSelected = [], readingAllInputs = {};
 
-function openTestSection(testId, section) {
+async function openTestSection(testId, section) {
   currentTest = ALL_TESTS.find(t => t.id === testId);
   currentAttempt = JSON.parse(sessionStorage.getItem('sn_attempt') || 'null');
   if (!currentTest || !currentAttempt) { window.location.hash = '#/dashboard'; return; }
+  // Pull in the heavy listening/writing data for this test before rendering sections.
+  await hydrateTest(testId);
   currentSection = section;
 
   // Record section start time
@@ -7363,6 +7387,7 @@ async function showResultsView(attemptId) {
       return;
     }
     const a = attempts[0];
+    await hydrateTest(a.test_id);
     const test = ALL_TESTS.find(t => t.id === a.test_id) || {};
     renderResultsContent(a, test);
   } catch(e) {
@@ -7819,7 +7844,9 @@ async function loadAdminResults() {
       const matchSearch = !gq || name.includes(gq) || testTitle.toLowerCase().includes(gq);
       const test = ALL_TESTS.find(t=>t.id===a.test_id);
       const tt = test?.test_type || '';
-      const matchType = typeF === 'all' || tt === typeF;
+      // 'writing' filter groups all writing-dedicated test types (full tests keep their own filter).
+      const WRITING_TYPES = ['writing_full','writing_only','task1_only','task2_only'];
+      const matchType = typeF === 'all' || tt === typeF || (typeF === 'writing' && WRITING_TYPES.includes(tt));
       return matchSearch && matchType;
     });
 
@@ -8289,6 +8316,7 @@ async function showGradeView(attemptId) {
     }
     if (!attempts || !attempts.length) return;
     gradingAttempt = attempts[0];
+    await hydrateTest(gradingAttempt.test_id);
     // Fetch student name
     try {
       const users = await dbGet('users', `id=eq.${gradingAttempt.user_id}&select=id,full_name`);
@@ -9291,9 +9319,10 @@ async function confirmDeleteTest(id, title) {
   } catch(e) { alert('Error: ' + e.message); }
 }
 
-function openEditTestModal(id) {
+async function openEditTestModal(id) {
   const test = ALL_TESTS.find(t => t.id === id);
   if (!test) return;
+  await hydrateTest(id);
   _atmEditId = id;
   _atmType = test.test_type || (test.type === 'writing_only' ? 'task2_only' : 'full');
   _atmAddMethod = 'manual';
