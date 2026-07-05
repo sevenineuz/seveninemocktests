@@ -5494,104 +5494,96 @@ async function renderProgressChart() {
 /* ════════════════════════════════════════════
    START TEST
    ════════════════════════════════════════════ */
-// Single lock gate for every path that starts/retakes a test. Returns true if the
-// student may proceed (test not locked, or the correct password was entered).
-// NOTE: password is trimmed to match lockTest(), which stores sha256(pwd.trim()).
-async function passesTestLock(testId) {
-  if (!(testLocks && testLocks[testId])) return true;
-  const pwd = prompt('This test is locked by your teacher.\nEnter the password to continue:');
-  if (pwd === null || pwd.trim() === '') return false;
-  const hash = await sha256(pwd.trim());
-  if (hash !== testLocks[testId]) {
-    alert('Incorrect password. Please contact your teacher.');
-    return false;
+// POST to the test-lock Edge Function. Returns {ok, ...data} — never throws.
+async function callTestLock(payload) {
+  try {
+    const resp = await fetch(SUPA_URL + '/functions/v1/test-lock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + SUPA_KEY },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { ok: false, error: data.error || ('http ' + resp.status) };
+    return { ok: true, ...data };
+  } catch (e) { return { ok: false, error: 'network' }; }
+}
+
+// Creates (or resumes) an attempt, enforcing the lock SERVER-SIDE for locked tests.
+// Locked → the Edge Function verifies the password and inserts the row (anon INSERT is
+// blocked by RLS for locked tests). Unlocked → normal client-side insert. Returns the
+// attempt object, or null if the student aborted / failed the lock.
+async function beginAttempt(testId, section, retake) {
+  if (testLocks && testLocks[testId]) {
+    const pwd = prompt('This test is locked by your teacher.\nEnter the password to continue:');
+    if (pwd === null || pwd.trim() === '') return null;
+    const r = await callTestLock({ action: 'start', user_id: session.id, test_id: testId, section: section, password: pwd.trim(), retake: !!retake });
+    if (!r.ok) {
+      alert((r.error === 'wrong password' || r.error === 'locked')
+        ? 'Incorrect password. Please contact your teacher.'
+        : 'Could not start test. Please try again.');
+      return null;
+    }
+    return r.attempt || null;
   }
-  return true;
+  // Unlocked: direct client insert (RLS permits inserts for unlocked tests).
+  try {
+    if (!retake) {
+      const existing = await dbGet('attempts', `user_id=eq.${session.id}&test_id=eq.${testId}&status=eq.in_progress&select=*`);
+      if (existing && existing.length > 0) return existing[0];
+    }
+    const res = await dbPost('attempts', {
+      test_id: testId, user_id: session.id,
+      started_at: new Date().toISOString(),
+      status: 'in_progress', section: section,
+      listening_answers: {}, reading_answers: {}, writing_answers: {},
+      tab_switches: 0
+    });
+    return Array.isArray(res) ? res[0] : res;
+  } catch (e) { alert('Could not start test. Please check your connection.'); console.error(e); return null; }
+}
+
+function firstSectionFor(test) {
+  const tt = test.test_type || test.type || 'full';
+  if (tt === 'writing_only' || tt === 'writing_full' || tt === 'task1_only' || tt === 'task2_only') return 'writing';
+  if (tt === 'reading_only') return 'reading';
+  return 'listening';
 }
 
 async function startTestSection(btn) {
   const testId = btn.dataset.tid;
   const section = btn.dataset.sec || 'all';
-  if (!(await passesTestLock(testId))) return;
   currentTest = ALL_TESTS.find(t => t.id === testId);
   if (!currentTest) return;
-  const firstSection = section === 'all'
-    ? (currentTest.type === 'writing_only' ? 'writing' : 'listening')
-    : section;
-  try {
-    const existing = await dbGet('attempts', `user_id=eq.${session.id}&test_id=eq.${testId}&status=eq.in_progress&select=*`);
-    if (existing && existing.length > 0) {
-      currentAttempt = existing[0];
-    } else {
-      const res = await dbPost('attempts', {
-        test_id: testId, user_id: session.id,
-        started_at: new Date().toISOString(),
-        status: 'in_progress', section: firstSection,
-        listening_answers: {}, reading_answers: {}, writing_answers: {},
-        tab_switches: 0
-      });
-      currentAttempt = Array.isArray(res) ? res[0] : res;
-    }
-    sessionStorage.setItem('sn_attempt', JSON.stringify(currentAttempt));
-    window.location.hash = '#/test/' + testId + '/' + firstSection;
-  } catch(e) {
-    alert('Could not start test. Please check your connection.');
-    console.error(e);
-  }
+  const firstSection = section === 'all' ? firstSectionFor(currentTest) : section;
+  const att = await beginAttempt(testId, firstSection, false);
+  if (!att) return;
+  currentAttempt = att;
+  sessionStorage.setItem('sn_attempt', JSON.stringify(currentAttempt));
+  window.location.hash = '#/test/' + testId + '/' + firstSection;
 }
 
 async function retakeTest(btn) {
   const testId = btn.dataset.tid;
-  if (!(await passesTestLock(testId))) return;
-  if (!confirm('Start a new attempt? Your previous results will be kept.')) return;
   currentTest = ALL_TESTS.find(t => t.id === testId);
   if (!currentTest) return;
-  try {
-    const _ttStart = currentTest.test_type || currentTest.type || 'full';
-      const firstSection = (_ttStart==='writing_only'||_ttStart==='writing_full'||_ttStart==='task1_only'||_ttStart==='task2_only')?'writing':(_ttStart==='reading_only')?'reading':'listening';
-    const res = await dbPost('attempts', {
-      test_id: testId, user_id: session.id,
-      started_at: new Date().toISOString(),
-      status: 'in_progress', section: firstSection,
-      listening_answers: {}, reading_answers: {}, writing_answers: {},
-      tab_switches: 0
-    });
-    currentAttempt = Array.isArray(res) ? res[0] : res;
-    sessionStorage.setItem('sn_attempt', JSON.stringify(currentAttempt));
-    window.location.hash = '#/test/' + testId + '/' + firstSection;
-  } catch(e) {
-    alert('Could not start test.'); console.error(e);
-  }
+  if (!confirm('Start a new attempt? Your previous results will be kept.')) return;
+  const firstSection = firstSectionFor(currentTest);
+  const att = await beginAttempt(testId, firstSection, true);
+  if (!att) return;
+  currentAttempt = att;
+  sessionStorage.setItem('sn_attempt', JSON.stringify(currentAttempt));
+  window.location.hash = '#/test/' + testId + '/' + firstSection;
 }
 
 async function startTest(testId) {
-  if (!(await passesTestLock(testId))) return;
   currentTest = ALL_TESTS.find(t => t.id === testId);
   if (!currentTest) return;
-  try {
-    const existing = await dbGet('attempts', `user_id=eq.${session.id}&test_id=eq.${testId}&status=eq.in_progress&select=*`);
-    if (existing && existing.length > 0) {
-      currentAttempt = existing[0];
-    } else {
-      const _ttStart = currentTest.test_type || currentTest.type || 'full';
-      const firstSection = (_ttStart==='writing_only'||_ttStart==='writing_full'||_ttStart==='task1_only'||_ttStart==='task2_only')?'writing':(_ttStart==='reading_only')?'reading':'listening';
-      const res = await dbPost('attempts', {
-        test_id: testId, user_id: session.id,
-        started_at: new Date().toISOString(),
-        status: 'in_progress', section: firstSection,
-        listening_answers: {}, reading_answers: {}, writing_answers: {},
-        tab_switches: 0
-      });
-      currentAttempt = Array.isArray(res) ? res[0] : res;
-    }
-    sessionStorage.setItem('sn_attempt', JSON.stringify(currentAttempt));
-    const _ttStart = currentTest.test_type || currentTest.type || 'full';
-      const firstSection = (_ttStart==='writing_only'||_ttStart==='writing_full'||_ttStart==='task1_only'||_ttStart==='task2_only')?'writing':(_ttStart==='reading_only')?'reading':'listening';
-    window.location.hash = '#/test/' + testId + '/' + firstSection;
-  } catch(e) {
-    alert('Could not start test. Please check your connection.');
-    console.error(e);
-  }
+  const firstSection = firstSectionFor(currentTest);
+  const att = await beginAttempt(testId, firstSection, false);
+  if (!att) return;
+  currentAttempt = att;
+  sessionStorage.setItem('sn_attempt', JSON.stringify(currentAttempt));
+  window.location.hash = '#/test/' + testId + '/' + firstSection;
 }
 
 /* ════════════════════════════════════════════
@@ -7774,8 +7766,12 @@ async function loadAdminTests() {
     const lockBadge = isLocked
       ? '<span style="font-size:9px;font-weight:700;background:rgba(255,59,48,.1);color:var(--red);padding:2px 8px;border-radius:8px;margin-left:6px;">🔒 LOCKED</span>'
       : '<span style="font-size:9px;font-weight:700;background:rgba(52,199,89,.1);color:var(--green);padding:2px 8px;border-radius:8px;margin-left:6px;">🔓 Open</span>';
-    const lockBtn = (session.role === 'owner' || session.role === 'admin')
+    const isStaff = (session.role === 'owner' || session.role === 'admin');
+    const lockBtn = isStaff
       ? `<button class="btn btn-ghost btn-sm" data-lock-id="${t.id}" data-lock-title="${(t.title||'').replace(/"/g,'&quot;')}" onclick="lockTest(this.dataset.lockId, this.dataset.lockTitle)">${isLocked ? '🔓 Unlock' : '🔒 Lock'}</button>`
+      : '';
+    const revealBtn = (isStaff && isLocked)
+      ? `<button class="btn btn-ghost btn-sm" data-reveal-id="${t.id}" onclick="revealLockPassword(this.dataset.revealId)">👁 Password</button>`
       : '';
     const isSupabase = !t.id.startsWith('mock-') && !t.id.startsWith('cam14-');
     const editBtn = isSupabase
@@ -7788,7 +7784,7 @@ async function loadAdminTests() {
       <td>${t.title}${lockBadge}</td>
       <td>${t.description||'—'}</td>
       <td><span class="badge badge-${t.status}">${t.status}</span></td>
-      <td><div class="table-actions">${lockBtn}${editBtn}${deleteBtn}</div></td>
+      <td><div class="table-actions">${lockBtn}${revealBtn}${editBtn}${deleteBtn}</div></td>
     </tr>`;
   }).join('');
 }
@@ -7965,10 +7961,12 @@ function saveTestLocks() {
 // Sync locks from the database so they are enforced consistently across devices.
 async function loadTestLocks() {
   try {
-    const rows = await dbGet('test_locks', 'select=test_id,lock_hash');
+    // Only the presence of a lock is needed client-side; the password/hash stays
+    // server-side (anon can read test_id only). Verification happens in the Edge Function.
+    const rows = await dbGet('test_locks', 'select=test_id');
     if (Array.isArray(rows)) {
       Object.keys(testLocks).forEach(k => delete testLocks[k]);
-      rows.forEach(r => { if (r && r.test_id) testLocks[r.test_id] = r.lock_hash; });
+      rows.forEach(r => { if (r && r.test_id) testLocks[r.test_id] = true; });
       saveTestLocks();
     }
   } catch (e) { /* keep cached localStorage copy if the server is unreachable */ }
@@ -8173,28 +8171,31 @@ async function deleteTest(id, title) {
 async function lockTest(testId, title) {
   const alreadyLocked = !!testLocks[testId];
   if (alreadyLocked) {
-    const confirmed = confirm('Unlock "' + title + '"?\nStudents will be able to start without a password.');
-    if (!confirmed) return;
-    try {
-      await dbDelete('test_locks', 'test_id=eq.' + encodeURIComponent(testId));
-    } catch (e) { alert('Could not remove the lock from the server. Please try again.'); return; }
+    if (!confirm('Unlock "' + title + '"?\nStudents will be able to start without a password.')) return;
+    const r = await callTestLock({ action: 'remove', requester_user_id: session.id, test_id: testId });
+    if (!r.ok) { alert('Could not remove the lock: ' + (r.error || 'server error') + '.'); return; }
     delete testLocks[testId];
-    saveTestLocks();
-    loadAdminTests();
-    renderAvailableTests();
-    return;
+  } else {
+    const pwd = prompt('Set a password to lock "' + title + '":\nStudents will need this to start.');
+    if (pwd === null || pwd.trim() === '') return;
+    const r = await callTestLock({ action: 'set', requester_user_id: session.id, test_id: testId, password: pwd.trim() });
+    if (!r.ok) { alert('Could not save the lock: ' + (r.error || 'server error') + '.'); return; }
+    testLocks[testId] = true;
   }
-  const pwd = prompt('Set a password to lock "' + title + '":\nStudents will need this to start.');
-  if (pwd === null || pwd.trim() === '') return;
-  const hash = await sha256(pwd.trim());
-  try {
-    await dbDelete('test_locks', 'test_id=eq.' + encodeURIComponent(testId)); // clear any stale row first
-    await dbPost('test_locks', { test_id: testId, lock_hash: hash });
-  } catch (e) { alert('Could not save the lock to the server. Please try again.'); return; }
-  testLocks[testId] = hash;
   saveTestLocks();
   loadAdminTests();
   renderAvailableTests();
+}
+
+// Owner/admin: fetch and show a locked test's password via the Edge Function (role-checked server-side).
+async function revealLockPassword(testId) {
+  const r = await callTestLock({ action: 'reveal', requester_user_id: session.id, test_id: testId });
+  if (!r.ok) { alert('Could not retrieve the password: ' + (r.error || 'server error') + '.'); return; }
+  if (r.password == null) {
+    alert('This lock was set before password-view was enabled.\nRe-lock the test to set a viewable password.');
+    return;
+  }
+  alert('Password for this test:\n\n' + r.password);
 }
 
 function adminGlobalSearch(val) {
