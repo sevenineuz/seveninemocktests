@@ -5494,18 +5494,25 @@ async function renderProgressChart() {
 /* ════════════════════════════════════════════
    START TEST
    ════════════════════════════════════════════ */
+// Single lock gate for every path that starts/retakes a test. Returns true if the
+// student may proceed (test not locked, or the correct password was entered).
+// NOTE: password is trimmed to match lockTest(), which stores sha256(pwd.trim()).
+async function passesTestLock(testId) {
+  if (!(testLocks && testLocks[testId])) return true;
+  const pwd = prompt('This test is locked by your teacher.\nEnter the password to continue:');
+  if (pwd === null || pwd.trim() === '') return false;
+  const hash = await sha256(pwd.trim());
+  if (hash !== testLocks[testId]) {
+    alert('Incorrect password. Please contact your teacher.');
+    return false;
+  }
+  return true;
+}
+
 async function startTestSection(btn) {
   const testId = btn.dataset.tid;
   const section = btn.dataset.sec || 'all';
-  if (testLocks && testLocks[testId]) {
-    const pwd = prompt('This test is locked by your teacher.\nEnter the password to continue:');
-    if (!pwd) return;
-    const hash = await sha256(pwd);
-    if (hash !== testLocks[testId]) {
-      alert('Incorrect password. Please contact your teacher.');
-      return;
-    }
-  }
+  if (!(await passesTestLock(testId))) return;
   currentTest = ALL_TESTS.find(t => t.id === testId);
   if (!currentTest) return;
   const firstSection = section === 'all'
@@ -5535,6 +5542,7 @@ async function startTestSection(btn) {
 
 async function retakeTest(btn) {
   const testId = btn.dataset.tid;
+  if (!(await passesTestLock(testId))) return;
   if (!confirm('Start a new attempt? Your previous results will be kept.')) return;
   currentTest = ALL_TESTS.find(t => t.id === testId);
   if (!currentTest) return;
@@ -5557,6 +5565,7 @@ async function retakeTest(btn) {
 }
 
 async function startTest(testId) {
+  if (!(await passesTestLock(testId))) return;
   currentTest = ALL_TESTS.find(t => t.id === testId);
   if (!currentTest) return;
   try {
@@ -7765,7 +7774,7 @@ async function loadAdminTests() {
     const lockBadge = isLocked
       ? '<span style="font-size:9px;font-weight:700;background:rgba(255,59,48,.1);color:var(--red);padding:2px 8px;border-radius:8px;margin-left:6px;">🔒 LOCKED</span>'
       : '<span style="font-size:9px;font-weight:700;background:rgba(52,199,89,.1);color:var(--green);padding:2px 8px;border-radius:8px;margin-left:6px;">🔓 Open</span>';
-    const lockBtn = session.role === 'owner'
+    const lockBtn = (session.role === 'owner' || session.role === 'admin')
       ? `<button class="btn btn-ghost btn-sm" data-lock-id="${t.id}" data-lock-title="${(t.title||'').replace(/"/g,'&quot;')}" onclick="lockTest(this.dataset.lockId, this.dataset.lockTitle)">${isLocked ? '🔓 Unlock' : '🔒 Lock'}</button>`
       : '';
     const isSupabase = !t.id.startsWith('mock-') && !t.id.startsWith('cam14-');
