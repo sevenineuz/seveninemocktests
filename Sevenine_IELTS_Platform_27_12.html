@@ -3549,7 +3549,12 @@ async function loadSupabaseTests() {
       const localKept = ALL_TESTS.filter(t => !remoteIds.has(t.id));
       ALL_TESTS = [...localKept, ...remote];
     }
-  } catch(e) { ALL_TESTS = [...MOCK_TESTS]; }
+  } catch(e) {
+    // Network blip: keep whatever catalog we already have rather than wiping it
+    // back to only the hardcoded mocks. Fall back to MOCK_TESTS only if we have nothing.
+    console.warn('loadSupabaseTests failed; keeping current catalog', e);
+    if (!Array.isArray(ALL_TESTS) || ALL_TESTS.length === 0) ALL_TESTS = [...MOCK_TESTS];
+  }
 }
 
 // Fetch the heavy JSONB blobs (listening_data, writing_data) for a single test and
@@ -5605,6 +5610,23 @@ async function openTestSection(testId, section) {
   await hydrateTest(testId);
   currentSection = section;
 
+  // Re-hydrate saved answers from the DB (the source of truth: autosave/flushAnswers
+  // writes there continuously). Without this, a mid-test reload restored the STALE
+  // sessionStorage copy (usually empty) -> student saw a blank test, and the next
+  // keystroke then overwrote the good DB answers with the empty set. Falls back to
+  // the sessionStorage copy if the fetch fails (offline).
+  try {
+    const fresh = await dbGet('attempts', `id=eq.${currentAttempt.id}&select=listening_answers,reading_answers,writing_answers,tab_switches`);
+    if (Array.isArray(fresh) && fresh[0]) {
+      const f = fresh[0];
+      if (f.listening_answers) currentAttempt.listening_answers = f.listening_answers;
+      if (f.reading_answers)   currentAttempt.reading_answers   = f.reading_answers;
+      if (f.writing_answers)   currentAttempt.writing_answers   = f.writing_answers;
+      if (typeof f.tab_switches === 'number') currentAttempt.tab_switches = f.tab_switches;
+      sessionStorage.setItem('sn_attempt', JSON.stringify(currentAttempt));
+    }
+  } catch(e) { /* offline — fall back to the sessionStorage copy below */ }
+
   // Record section start time
   if (!currentAttempt.section_times) currentAttempt.section_times = {};
   if (!currentAttempt.section_times[section + '_start']) {
@@ -7228,8 +7250,10 @@ function normaliseAnswer(s) {
     'not given.':'not given', 'yes.':'yes', 'no.':'no',
     'not_given':'not given'
   };
-  // Strip leading number prefix like "1. " or "1) " that gets saved with the answer
-  let clean = s.toString().trim().replace(/^\d+[\.\)\:]\s*/, '').toLowerCase().trim();
+  // Strip leading number prefix like "1. " or "1) " that gets saved with the answer,
+  // and collapse internal whitespace so the student side matches the key side
+  // (acceptableAnswers already collapses \s+ — without this "not  given" fails to match).
+  let clean = s.toString().trim().replace(/^\d+[\.\)\:]\s*/, '').replace(/\s+/g, ' ').toLowerCase().trim();
   return map[clean] || clean;
 }
 
@@ -7797,9 +7821,9 @@ async function loadAdminStudents() {
     const sq2 = (typeof adminGlobalQuery!=='undefined') ? adminGlobalQuery : '';
     const filteredUsers = sq2 ? users.filter(u => (u.full_name+' '+u.username).toLowerCase().includes(sq2)) : users;
     tbody.innerHTML = filteredUsers.map(u => `<tr>
-      <td>${u.full_name}</td>
-      <td>${u.username}</td>
-      <td><span class="role-badge role-${u.role}">${u.role}</span></td>
+      <td>${escapeHtmlSimple(u.full_name)}</td>
+      <td>${escapeHtmlSimple(u.username)}</td>
+      <td><span class="role-badge role-${escapeHtmlSimple(u.role)}">${escapeHtmlSimple(u.role)}</span></td>
       <td>${u.created_at ? new Date(u.created_at).toLocaleDateString('en-GB') : '—'}</td>
       <td><span class="status-dot ${u.active?'dot-active':'dot-inactive'}"></span>${u.active?'Active':'Inactive'}</td>
       <td><div class="table-actions">
@@ -7932,8 +7956,8 @@ async function loadAdminResults() {
       </div>`;
 
       return `<tr>
-        <td style="font-weight:500;">${userMap[a.user_id]||a.user_id}</td>
-        <td style="font-size:11px;">${test.title||a.test_id}</td>
+        <td style="font-weight:500;">${escapeHtmlSimple(userMap[a.user_id]||a.user_id)}</td>
+        <td style="font-size:11px;">${escapeHtmlSimple(test.title||a.test_id)}</td>
         <td style="font-size:11px;color:var(--g3);">${startedStr}</td>
         <td style="font-size:11px;color:var(--g3);">${finishedStr}</td>
         <td style="font-size:11px;font-weight:600;">${durationStr}${secBreakdown}</td>
@@ -8280,9 +8304,13 @@ async function saveSpeakingGrade() {
     const newFb = {...existingFb, speaking: feedback, speaking_criteria: criteriaFb};
     const lBand = a.listening_score || null;
     const rBand = a.reading_score || null;
-    const wBand = (a.writing_task1_score || a.writing_task2_score)
-      ? Math.round(((a.writing_task1_score||0)*0.333 + (a.writing_task2_score||0)*0.667)*2)/2
-      : null;
+    // Match the AI-grade path: only average the two tasks when BOTH exist.
+    // If just one task is graded, that task's band IS the writing band —
+    // don't plug 0 in for the missing task (that under-scored single-task attempts).
+    const _w1 = a.writing_task1_score, _w2 = a.writing_task2_score;
+    const wBand = (_w1 != null && _w2 != null)
+      ? Math.round((_w1*0.333 + _w2*0.667)*2)/2
+      : (_w1 != null ? _w1 : (_w2 != null ? _w2 : null));
     let newOverall = a.overall_band || null;
     if (lBand && rBand && wBand && band) {
       newOverall = Math.round(((lBand + rBand + wBand + band) / 4) * 2) / 2;
@@ -8355,7 +8383,7 @@ function buildGradeView() {
   document.getElementById('grade-info-header').innerHTML = `
     <div style="font-size:12px;color:var(--g4);margin-bottom:4px;">Grading submission</div>
     <div style="font-family:'DM Serif Display',serif;font-size:18px;color:var(--g1);margin-bottom:8px;">${test.title||'Test'}</div>
-    <div class="info-row"><span class="info-label">Student</span><span class="info-val">${a._studentName||a.user_id}</span></div>
+    <div class="info-row"><span class="info-label">Student</span><span class="info-val">${escapeHtmlSimple(a._studentName||a.user_id)}</span></div>
     <div class="info-row"><span class="info-label">Submitted</span><span class="info-val">${a.submitted_at?new Date(a.submitted_at).toLocaleString('en-GB'):'—'}</span></div>
     <div class="info-row"><span class="info-label">L Score</span><span class="info-val">${a.listening_score!=null?a.listening_score:'Pending'}</span></div>
     <div class="info-row"><span class="info-label">R Score</span><span class="info-val">${a.reading_score!=null?a.reading_score:'Pending'}</span></div>
