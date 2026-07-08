@@ -424,6 +424,15 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--g6);colo
   border-bottom:.5px solid var(--g5);vertical-align:middle;}
 .admin-table tr:last-child td{border-bottom:none;}
 .admin-table tr:hover td{background:rgba(0,122,255,.02);}
+/* Per-skill result chips (admin results table) */
+.skill-chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center;}
+.skill-chip{display:inline-flex;align-items:baseline;gap:4px;padding:3px 8px;border-radius:7px;line-height:1;white-space:nowrap;border:1px solid transparent;}
+.skill-chip .sc-lbl{font-size:9px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.85;}
+.skill-chip .sc-val{font-size:12px;font-weight:700;}
+.skill-chip.sc-filled{padding:4px 10px;box-shadow:0 1px 2px rgba(0,0,0,.08);}
+.skill-chip.sc-filled .sc-lbl{opacity:.9;}
+.skill-chip.sc-filled .sc-val{font-size:13px;}
+.skill-chip.sc-pending{color:var(--g4);background:var(--g6);border-color:var(--g5);}
 .table-actions{display:flex;gap:6px;}
 .role-badge{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
   padding:2px 8px;border-radius:9px;}
@@ -7855,6 +7864,20 @@ async function loadAdminStudents() {
   } catch(e) { tbody.innerHTML = '<tr><td colspan="6" style="color:var(--red);padding:16px;">Failed to load.</td></tr>'; }
 }
 
+// Render one skill as a compact colour-coded chip for the admin results table.
+// filled=true -> solid pill (used for the Overall band / mini-test score) so it
+// reads as the headline number; otherwise a soft tinted chip in the skill hue.
+function skillChip(label, val, color, filled) {
+  if (filled) {
+    return `<span class="skill-chip sc-filled" style="background:${color};color:#fff;"><span class="sc-lbl">${label}</span><span class="sc-val">${val}</span></span>`;
+  }
+  return `<span class="skill-chip" style="background:${color}1a;color:${color};"><span class="sc-lbl">${label}</span><span class="sc-val">${val}</span></span>`;
+}
+// Muted chip for a skill that is expected on this test type but not yet graded.
+function pendingChip(label) {
+  return `<span class="skill-chip sc-pending" title="Not graded yet"><span class="sc-lbl">${label}</span><span class="sc-val">·</span></span>`;
+}
+
 async function loadAdminResults() {
   const tbody = document.getElementById('admin-results-tbody');
   try {
@@ -7951,21 +7974,33 @@ async function loadAdminResults() {
         const raw   = res._raw   !== undefined ? res._raw   : (isMiniL ? a.listening_score  : a.reading_score);
         const total = res._total !== undefined ? res._total : '?';
         const icon  = isMiniL ? '🎧' : '📖';
-        scoreCell = total !== '?' && raw !== null
-          ? `<span style="font-weight:600;color:var(--blue);">${raw} / ${total}</span> <span style="font-size:10px;color:var(--g4);">correct</span>`
+        const mColor = isMiniL ? '#185FA5' : '#3B6D11';
+        scoreCell = (total !== '?' && raw !== null)
+          ? `<div class="skill-chips">${skillChip(icon, `${raw} / ${total}`, mColor, true)}</div>`
           : `<span style="color:var(--g4);">—</span>`;
       } else {
         // Full test: show skill bands
         const at1 = a.writing_task1_score, at2 = a.writing_task2_score;
         const aHT1 = at1 != null && !isNaN(at1), aHT2 = at2 != null && !isNaN(at2);
         const wS = (aHT1 && aHT2) ? Math.round((at1*0.333 + at2*0.667)*2)/2 : (aHT1 ? at1 : (aHT2 ? at2 : null));
+        const isFull = tt === 'full';
+        const isWritingTest = ['writing_full','writing_only','task1_only','task2_only'].includes(tt);
         const parts = [];
-        if (a.listening_score) parts.push(`<span title="Listening" style="color:#185FA5;font-weight:600;">L:${a.listening_score}</span>`);
-        if (a.reading_score)   parts.push(`<span title="Reading"   style="color:#3B6D11;font-weight:600;">R:${a.reading_score}</span>`);
-        if (wS)                parts.push(`<span title="Writing"   style="color:#534AB7;font-weight:600;">W:${wS}</span>`);
-        if (a.speaking_score)  parts.push(`<span title="Speaking"  style="color:#854F0B;font-weight:600;">Sp:${a.speaking_score}</span>`);
-        if (a.overall_band)    parts.push(`<span title="Overall"   style="color:#cc6600;font-weight:700;">→${a.overall_band}</span>`);
-        scoreCell = parts.length ? parts.join(' <span style="color:var(--g5);">·</span> ') : '—';
+        // Listening / Reading: expected on full tests -> show a pending chip if absent.
+        if (a.listening_score)   parts.push(skillChip('L', a.listening_score, '#185FA5'));
+        else if (isFull)         parts.push(pendingChip('L'));
+        if (a.reading_score)     parts.push(skillChip('R', a.reading_score, '#3B6D11'));
+        else if (isFull)         parts.push(pendingChip('R'));
+        // Writing: expected on full and writing-dedicated tests.
+        if (wS != null)          parts.push(skillChip('W', wS, '#534AB7'));
+        else if (isFull || isWritingTest) parts.push(pendingChip('W'));
+        // Speaking is graded separately/optionally — only show once it exists.
+        if (a.speaking_score)    parts.push(skillChip('Sp', a.speaking_score, '#854F0B'));
+        // Overall band: the headline number, rendered as a solid pill.
+        const overallChip = a.overall_band ? skillChip('Overall', a.overall_band, '#007AFF', true) : '';
+        scoreCell = (parts.length || overallChip)
+          ? `<div class="skill-chips">${parts.join('')}${overallChip}</div>`
+          : '—';
       }
 
       // Actions
