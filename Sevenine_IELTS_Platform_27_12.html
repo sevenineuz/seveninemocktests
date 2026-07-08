@@ -4783,7 +4783,15 @@ async function login() {
     session = users[0];
     sessionStorage.setItem('sn_session', JSON.stringify(session));
     updateTopBar();
-    window.location.hash = '#/dashboard';
+    // Go to the dashboard. If the hash is ALREADY '#/dashboard' (e.g. the browser
+    // restored it from a previous visit while logged out), reassigning it fires no
+    // hashchange event, so route() never runs and the login screen would stay up
+    // until a manual refresh. Render explicitly in that case.
+    if (window.location.hash === '#/dashboard') {
+      route();
+    } else {
+      window.location.hash = '#/dashboard';
+    }
   } catch(e) {
     errEl.textContent = 'Connection error. Check your config.';
     console.error(e);
