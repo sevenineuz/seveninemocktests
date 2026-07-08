@@ -681,7 +681,7 @@ select.editor-input{cursor:pointer;}
 ══════════════════════════════════════ -->
 <div class="top-bar" id="main-top-bar" style="display:none;">
   <div class="top-left">
-    <div class="brand" onclick="window.location.hash='#/dashboard'"><span class="bk">Seve</span><span class="bb">n</span><span class="bk">ine</span></div>
+    <div class="brand" onclick="goHome()" title="Home"><span class="bk">Seve</span><span class="bb">n</span><span class="bk">ine</span></div>
     <div class="doc-badge">IELTS Mock Tests</div>
     <div class="dash-filter-tabs" id="dash-filter-tabs">
       <div class="dash-ftab active" data-filter="full" onclick="setDashFilter('full')">Full Tests</div>
@@ -946,7 +946,7 @@ select.editor-input{cursor:pointer;}
   <div class="test-top-bar" style="position:fixed;top:0;left:0;right:0;z-index:100;background:var(--white);border-bottom:.5px solid var(--g5);height:56px;padding:0 20px;display:flex;align-items:center;justify-content:space-between;">
     <div class="top-left">
       <button class="btn btn-ghost btn-sm" onclick="window.location.hash='#/admin/results'">← Results</button>
-      <div class="brand" style="font-size:16px;" onclick="window.location.hash='#/dashboard'" title="Home"><span class="bk">Seve</span><span class="bb">n</span><span class="bk">ine</span></div>
+      <div class="brand" style="font-size:16px;" onclick="goHome()" title="Home"><span class="bk">Seve</span><span class="bb">n</span><span class="bk">ine</span></div>
       <div class="doc-badge">Grading</div>
     </div>
     <div class="top-right">
@@ -4872,6 +4872,20 @@ function setDashView(view) {
   if (view === 'results') { renderMyResults(); renderProgressChart(); }
   if (view === 'scoreboard') { renderScoreboard(); }
 
+}
+
+// The Sevenine logo -> homepage, reliable from ANY non-test page. Avoids two
+// dead-spots: (1) if the hash is already '#/dashboard', reassigning it fires no
+// hashchange so route() never runs; (2) the dashboard sub-tabs (My Results /
+// Scoreboard) share the '#/dashboard' hash, so we must switch back to Tests
+// explicitly rather than relying on a route change.
+function goHome() {
+  if (window.location.hash === '#/dashboard') {
+    showDashboard();
+  } else {
+    window.location.hash = '#/dashboard';
+  }
+  setDashView('tests');
 }
 
 function filterMyResults() { renderMyResults(); renderProgressChart(); }
