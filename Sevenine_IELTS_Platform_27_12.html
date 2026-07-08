@@ -946,7 +946,7 @@ select.editor-input{cursor:pointer;}
   <div class="test-top-bar" style="position:fixed;top:0;left:0;right:0;z-index:100;background:var(--white);border-bottom:.5px solid var(--g5);height:56px;padding:0 20px;display:flex;align-items:center;justify-content:space-between;">
     <div class="top-left">
       <button class="btn btn-ghost btn-sm" onclick="window.location.hash='#/admin/results'">← Results</button>
-      <div class="brand" style="font-size:16px;"><span class="bk">Seve</span><span class="bb">n</span><span class="bk">ine</span></div>
+      <div class="brand" style="font-size:16px;" onclick="window.location.hash='#/dashboard'" title="Home"><span class="bk">Seve</span><span class="bb">n</span><span class="bk">ine</span></div>
       <div class="doc-badge">Grading</div>
     </div>
     <div class="top-right">
@@ -5744,7 +5744,7 @@ function buildTestTopBar(section) {
   document.getElementById('test-top-bar').innerHTML =
     '<div class="top-left">' +
       '<button onclick="exitTestConfirm()" class="btn-exit-test">&#8592; Exit</button>' +
-      '<div class="brand" style="font-size:16px;"><span class="bk">Seve</span><span class="bb">n</span><span class="bk">ine</span></div>' +
+      '<div class="brand" style="font-size:16px;" onclick="exitTestConfirm()" title="Home (saves your progress)"><span class="bk">Seve</span><span class="bb">n</span><span class="bk">ine</span></div>' +
       '<div class="section-nav">' + navHtml + '</div>' +
     '</div>' +
     '<div style="display:flex;align-items:center;gap:12px;">' +
