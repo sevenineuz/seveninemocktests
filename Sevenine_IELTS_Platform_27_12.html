@@ -1762,7 +1762,7 @@ const MOCK_TESTS = [
       task1: {
         prompt: 'The graph below shows the average consumption of cheese per person in England, Scotland, Wales and Northern Ireland between 1980 and 2020. Summarise the information by selecting and reporting the main features, and make comparisons where relevant.',
         visual_type: 'svg',
-        visual: `<svg viewBox="0 0 720 320" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;">
+        visual: `<svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;">
         <!-- grid lines -->
         <line x1="70" y1="20" x2="70" y2="270" stroke="#E5E5EA" stroke-width="1"/>
         <line x1="70" y1="270" x2="700" y2="270" stroke="#E5E5EA" stroke-width="1"/>
@@ -1844,6 +1844,20 @@ const MOCK_TESTS = [
         <circle cx="386" cy="194" r="4" fill="#2EAE5E"/>
         <circle cx="544" cy="162" r="4" fill="#2EAE5E"/>
         <circle cx="700" cy="154" r="4" fill="#2EAE5E"/>
+
+        <!-- Legend: which colour is which country -->
+        <line x1="70"  y1="320" x2="90"  y2="320" stroke="#4A90D9" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="80"  cy="320" r="3.5" fill="#4A90D9"/>
+        <text x="96"  y="324" font-family="DM Sans,sans-serif" font-size="12" fill="#3A3A3C">England</text>
+        <line x1="228" y1="320" x2="248" y2="320" stroke="#E05252" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="238" cy="320" r="3.5" fill="#E05252"/>
+        <text x="254" y="324" font-family="DM Sans,sans-serif" font-size="12" fill="#3A3A3C">Scotland</text>
+        <line x1="378" y1="320" x2="398" y2="320" stroke="#F0A500" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="388" cy="320" r="3.5" fill="#F0A500"/>
+        <text x="404" y="324" font-family="DM Sans,sans-serif" font-size="12" fill="#3A3A3C">Wales</text>
+        <line x1="500" y1="320" x2="520" y2="320" stroke="#2EAE5E" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="510" cy="320" r="3.5" fill="#2EAE5E"/>
+        <text x="526" y="324" font-family="DM Sans,sans-serif" font-size="12" fill="#3A3A3C">Northern Ireland</text>
       </svg>`
       },
       task2: {
