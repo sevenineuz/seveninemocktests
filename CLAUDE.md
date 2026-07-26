@@ -76,10 +76,16 @@ shift the display.
 - `normaliseAnswer` / `acceptableAnswers` / `answerMatches`: text answers are
   lowercased/trimmed; `/` in a key = accepted alternatives; `()` = optional words;
   leading a/an/the optional. Units/symbols NOT stripped.
-- `autoScoreReading` / `autoScoreListening`: build **multi-select groups only from
-  answer_key keys containing a hyphen** (e.g. `"14-16": "C, E, F"`). Single keys
-  like `14`,`15`,`16` are treated as single-answer and will NOT score a
-  multi-select — they'll read empty and score 0.
+- Multi-select answer-key conventions DIFFER by section:
+  - **Reading** (`autoScoreReading`): groups come **only from answer_key keys
+    containing a hyphen** (e.g. `"14-16": "C, E, F"`). Single keys like
+    `14`,`15`,`16` for an ms group read empty and score 0.
+  - **Listening** (`autoScoreListening`): the OPPOSITE — keys must be
+    **per-question singles** (`15:'A',16:'D'`); groups are inferred from the
+    student's `ms_<lo-hi>` answers. A hyphen key in a listening answer_key is
+    never matched and scores 0.
+- MC `data-q` accepts `"l11"`, `"lq11"`, or `"11"` (parser strips `l`/`lq`).
+  Anything else silently drops the click — pickMC saves nothing.
 - `rawToBand(raw, table)` uses `READING_BANDS` (== `LISTENING_BANDS`), calibrated
   for a 40-question paper. **For 13-question mini readings the band value is
   meaningless — report raw X/13, ignore the band.**
