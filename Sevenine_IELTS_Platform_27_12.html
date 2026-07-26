@@ -4794,6 +4794,8 @@ async function showDashboard() {
   loadSupabaseTests().then(renderAvailableTests);
   loadTestLocks().then(renderAvailableTests);
   // Results loaded on demand when tab is clicked
+  // First-visit nudge toward Writing → Task 2 (once per student, students only)
+  setTimeout(function () { if (window.SNWritingTour) SNWritingTour.maybe(); }, 500);
 }
 
 let dashFilter = 'full';
@@ -4854,6 +4856,154 @@ function goHome() {
 }
 
 function filterMyResults() { renderMyResults(); renderProgressChart(); }
+
+/* ═══════════════════════════════════════════════════════════════
+   GUIDED WRITING TOUR — nudges students toward Writing → Task 2.
+   Interactive click-through (only the highlighted element is clickable),
+   shown once per student. Steps: Writing tab → Task 2 Only → Start.
+   Manual controls for testing: SNWritingTour.start() / SNWritingTour.reset()
+═══════════════════════════════════════════════════════════════ */
+window.SNWritingTour = (function () {
+  const KEY_PREFIX = 'sn_writing_tour_v1_';
+  const PAD = 6;
+  let els = null, curTarget = null, onTargetClick = null, reposition = null, running = false;
+
+  const STEPS = [
+    { sel: function () { return document.querySelector('#dash-filter-tabs .dash-ftab[data-filter="writing"]'); },
+      title: 'Boost your Writing score ✍️',
+      body: 'The fastest way to improve is practising <b>Task 2</b> essays. Tap <b>Writing</b> to see them.' },
+    { sel: function () { return document.querySelector('#available-tests-grid .dash-ftab[data-wsf="t2only"]'); },
+      title: 'Choose “Task 2 Only”',
+      body: 'These are short, focused essays you can finish in about 40 minutes. Tap <b>Task 2 Only</b>.' },
+    { sel: function () { return document.querySelector('#available-tests-grid .test-card button.btn-primary[data-sec="writing"]'); },
+      title: 'Start your first essay',
+      body: 'Hit <b>Start</b> and write your Task 2 — you’ll get a band score and feedback afterwards.',
+      last: true }
+  ];
+
+  function seenKey() {
+    var uid = (typeof session !== 'undefined' && session && session.id) ? session.id : 'anon';
+    return KEY_PREFIX + uid;
+  }
+  function alreadySeen() { try { return localStorage.getItem(seenKey()) === '1'; } catch (e) { return false; } }
+  function markSeen()   { try { localStorage.setItem(seenKey(), '1'); } catch (e) {} }
+
+  function injectStyle() {
+    if (document.getElementById('sn-tour-style')) return;
+    var s = document.createElement('style');
+    s.id = 'sn-tour-style';
+    s.textContent =
+      '.sn-tour-mask{position:fixed;background:rgba(15,23,42,.55);z-index:99998;transition:all .18s ease;}' +
+      '.sn-tour-ring{position:fixed;z-index:99998;border-radius:12px;pointer-events:none;transition:all .18s ease;animation:snTourPulse 1.6s ease-in-out infinite;}' +
+      '@keyframes snTourPulse{0%,100%{box-shadow:0 0 0 3px #007AFF,0 0 0 6px rgba(0,122,255,.22);}50%{box-shadow:0 0 0 3px #007AFF,0 0 0 11px rgba(0,122,255,.08);}}' +
+      '.sn-tour-tip{position:fixed;z-index:100000;max-width:290px;background:#fff;border-radius:14px;padding:16px 18px;box-shadow:0 12px 40px rgba(0,0,0,.22);font-family:\'DM Sans\',sans-serif;}' +
+      '.sn-tour-tip h4{font-family:\'DM Serif Display\',serif;font-size:16px;color:#0f172a;margin:0 0 6px;}' +
+      '.sn-tour-tip p{font-size:13px;line-height:1.5;color:#475569;margin:0 0 12px;}' +
+      '.sn-tour-row{display:flex;align-items:center;justify-content:space-between;gap:10px;}' +
+      '.sn-tour-step{font-size:11px;color:#94a3b8;font-weight:600;}' +
+      '.sn-tour-skip{background:none;border:none;color:#94a3b8;font-size:12px;cursor:pointer;font-family:inherit;padding:0;}' +
+      '.sn-tour-skip:hover{color:#64748b;text-decoration:underline;}';
+    document.head.appendChild(s);
+  }
+
+  function buildDom() {
+    injectStyle();
+    els = {};
+    ['T', 'B', 'L', 'R'].forEach(function (k) {
+      var d = document.createElement('div');
+      d.className = 'sn-tour-mask';
+      d.addEventListener('click', function (e) { e.stopPropagation(); }); // swallow clicks outside the target
+      document.body.appendChild(d);
+      els['mask' + k] = d;
+    });
+    var ring = document.createElement('div'); ring.className = 'sn-tour-ring'; document.body.appendChild(ring); els.ring = ring;
+    var tip = document.createElement('div'); tip.className = 'sn-tour-tip'; document.body.appendChild(tip); els.tip = tip;
+  }
+
+  function setBox(el, x, y, w, h) { el.style.left = x + 'px'; el.style.top = y + 'px'; el.style.width = Math.max(0, w) + 'px'; el.style.height = Math.max(0, h) + 'px'; }
+
+  function place(target) {
+    if (!els || !target) return;
+    var r = target.getBoundingClientRect();
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var x = r.left - PAD, y = r.top - PAD, w = r.width + PAD * 2, h = r.height + PAD * 2;
+    setBox(els.maskT, 0, 0, vw, y);
+    setBox(els.maskB, 0, y + h, vw, vh - (y + h));
+    setBox(els.maskL, 0, y, x, h);
+    setBox(els.maskR, x + w, y, vw - (x + w), h);
+    els.ring.style.left = x + 'px'; els.ring.style.top = y + 'px'; els.ring.style.width = w + 'px'; els.ring.style.height = h + 'px';
+    var tip = els.tip; tip.style.visibility = 'hidden'; tip.style.display = 'block';
+    var th = tip.offsetHeight, tw = tip.offsetWidth;
+    var ty = y + h + 12; if (ty + th > vh - 8) ty = Math.max(8, y - th - 12);
+    var tx = Math.min(Math.max(8, x), vw - tw - 8);
+    tip.style.left = tx + 'px'; tip.style.top = ty + 'px'; tip.style.visibility = 'visible';
+  }
+
+  function waitFor(sel, timeout, cb) {
+    var t0 = Date.now();
+    (function poll() {
+      var el = sel();
+      if (el && el.offsetParent !== null) return cb(el);
+      if (Date.now() - t0 > timeout) return cb(null);
+      requestAnimationFrame(poll);
+    })();
+  }
+
+  function detachTarget() { if (curTarget && onTargetClick) curTarget.removeEventListener('click', onTargetClick); curTarget = null; onTargetClick = null; }
+
+  function teardown() {
+    running = false;
+    detachTarget();
+    if (reposition) { window.removeEventListener('resize', reposition); window.removeEventListener('scroll', reposition, true); reposition = null; }
+    if (els) { Object.keys(els).forEach(function (k) { if (els[k]) els[k].remove(); }); els = null; }
+  }
+
+  function finish() { markSeen(); teardown(); }
+
+  function runStep(i) {
+    var step = STEPS[i];
+    waitFor(step.sel, 4500, function (target) {
+      if (!target) { finish(); return; } // element never appeared (e.g. no Task 2 tests) → end quietly
+      curTarget = target;
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      els.tip.innerHTML =
+        '<h4>' + step.title + '</h4>' +
+        '<p>' + step.body + '</p>' +
+        '<div class="sn-tour-row">' +
+          '<span class="sn-tour-step">Step ' + (i + 1) + ' of ' + STEPS.length + '</span>' +
+          '<button class="sn-tour-skip" type="button">Skip</button>' +
+        '</div>';
+      els.tip.querySelector('.sn-tour-skip').onclick = function (e) { e.stopPropagation(); finish(); };
+      setTimeout(function () { place(target); }, 240);
+      reposition = function () { if (curTarget) place(curTarget); };
+      window.addEventListener('resize', reposition);
+      window.addEventListener('scroll', reposition, true);
+      onTargetClick = function () {
+        detachTarget();
+        if (step.last) { finish(); return; }        // let the click open the test; tour ends
+        setTimeout(function () { runStep(i + 1); }, 80); // wait for re-render, then next step
+      };
+      target.addEventListener('click', onTargetClick);
+    });
+  }
+
+  function begin() { if (running) return; running = true; buildDom(); runStep(0); }
+
+  function maybe() {
+    if (running || alreadySeen()) return;
+    if (typeof session === 'undefined' || !session) return;
+    if (session.role === 'admin' || session.role === 'owner') return; // students only
+    var wtab = document.querySelector('#dash-filter-tabs .dash-ftab[data-filter="writing"]');
+    if (!wtab || wtab.offsetParent === null) return;                  // dashboard not visible yet
+    begin();
+  }
+
+  return {
+    maybe: maybe,
+    start: function () { begin(); },                                   // force-run (testing)
+    reset: function () { try { localStorage.removeItem(seenKey()); } catch (e) {} } // clear "seen" flag
+  };
+})();
 
 /* ── WRITING TESTS VIEW ── */
 async function renderWritingTests() {
