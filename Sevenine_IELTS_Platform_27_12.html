@@ -5320,10 +5320,13 @@ function publishedDetail(result, tests) {
     return '<div class="pub-empty">No mock tests recorded for this student.</div>';
   }
 
+  // Mini papers carry no meaningful band, so they must not enter the skill averages.
+  const bandTests = tests.filter(t => !miniKind(t.test_id));
+
   // per-skill mock averages
   let skillsHtml = '';
   _PUB_SKILLS.forEach(([label, mockKey, offKey]) => {
-    const vals = tests.map(t => _pubNum(t[mockKey])).filter(v => v !== null);
+    const vals = bandTests.map(t => _pubNum(t[mockKey])).filter(v => v !== null);
     const off  = _pubNum(result[offKey]);
     if (!vals.length && off === null) return;
     const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
@@ -5341,7 +5344,19 @@ function publishedDetail(result, tests) {
 
   let rowsHtml = '';
   tests.forEach(t => {
-    const c = k => { const v = _pubNum(t[k]); return v === null ? '&mdash;' : v.toFixed(1); };
+    const mk = miniKind(t.test_id);
+    const c = k => {
+      // a mini paper reports "x/n", never a band
+      if (mk === 'listening' && k === 'listening_score') {
+        return (t.listening_raw !== null && t.listening_total) ? (t.listening_raw + '/' + t.listening_total) : '&mdash;';
+      }
+      if (mk === 'reading' && k === 'reading_score') {
+        return (t.reading_raw !== null && t.reading_total) ? (t.reading_raw + '/' + t.reading_total) : '&mdash;';
+      }
+      if (mk && k === 'overall_band') return '&mdash;';
+      const v = _pubNum(t[k]);
+      return v === null ? '&mdash;' : v.toFixed(1);
+    };
     rowsHtml += '<div class="pt-row">' +
       '<span class="pt-n">' + escapeHtmlSafe(_pubTestTitle(t)) + '</span>' +
       '<span class="pt-d">' + (t.submitted_at ? new Date(t.submitted_at).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'}) : '') + '</span>' +
@@ -5959,14 +5974,71 @@ async function renderAvailableTests() {
   document.getElementById('available-tests-grid').innerHTML = html;
 }
 
+/* ── Mini-test scoring ───────────────────────────────────────────────────────
+   rawToBand() is calibrated for a 40-question paper. Mini listening/reading
+   papers run 6-13 questions, so feeding their raw score through it produces a
+   nonsense band — 11 out of 13 came out as band 4.0. Mini tests therefore never
+   display a 0-9 band anywhere; they report "x / n correct" instead. */
+function miniKind(testOrId) {
+  const t = (typeof testOrId === 'string')
+    ? ((typeof ALL_TESTS !== 'undefined') && ALL_TESTS.find(x => x.id === testOrId))
+    : testOrId;
+  if (!t) return null;
+  const tt = t.test_type || t.type;
+  if (tt === 'listening_only') return 'listening';
+  if (tt === 'reading_only')   return 'reading';
+  return null;
+}
+
+// Number of questions in a section's key, expanding hyphen group keys ("19-20" = 2).
+function answerKeyCount(test, kind) {
+  const data = !test ? null : (kind === 'listening' ? test.listening_data : test.reading_data);
+  const key = data && data.answer_key;
+  if (!key) return null;
+  let n = 0;
+  Object.keys(key).forEach(k => {
+    const m = String(k).match(/^(\d+)\s*-\s*(\d+)$/);
+    n += m ? (parseInt(m[2]) - parseInt(m[1]) + 1) : 1;
+  });
+  return n || null;
+}
+
+// raw/total for a mini attempt. _raw/_total live inside the results JSON because the
+// dedicated columns are not written on the mini path; fall back to the key length.
+function miniRawTotal(attempt, kind, test) {
+  const res = kind === 'listening' ? attempt.listening_results : attempt.reading_results;
+  let raw = null, total = null;
+  if (res && typeof res === 'object') {
+    if (res._raw   !== undefined && res._raw   !== null) raw   = Number(res._raw);
+    if (res._total !== undefined && res._total !== null) total = Number(res._total);
+  }
+  if (raw === null) {
+    const col = kind === 'listening' ? attempt.listening_raw : attempt.reading_raw;
+    if (col !== undefined && col !== null) raw = Number(col);
+  }
+  if (total === null) total = answerKeyCount(test, kind);
+  return {raw: (raw === null || isNaN(raw)) ? null : raw,
+          total: (total === null || isNaN(total)) ? null : total};
+}
+
+function miniScoreCell(raw, total) {
+  if (raw === null || !total) return '<span style="color:var(--g4);">&#8212;</span>';
+  const pct = raw / total;
+  const col = pct >= 0.7 ? 'var(--green)' : pct >= 0.5 ? 'var(--orange)' : 'var(--red)';
+  return '<div style="text-align:center;white-space:nowrap;">' +
+    '<span style="font-size:14px;font-weight:700;color:' + col + ';">' + raw + '</span>' +
+    '<span style="font-size:11px;color:var(--g4);"> / ' + total + '</span>' +
+    '<div style="font-size:9px;color:var(--g4);">correct</div></div>';
+}
+
 async function renderMyResults() {
   const tbody = document.getElementById('my-results-tbody');
   try {
     let attempts;
     try {
-      attempts = await dbGet('attempts', `user_id=eq.${session.id}&order=submitted_at.desc,started_at.desc&select=id,test_id,user_id,status,submitted_at,listening_score,reading_score,writing_task1_score,writing_task2_score,speaking_score,overall_band,writing_answers,tab_switches`);
+      attempts = await dbGet('attempts', `user_id=eq.${session.id}&order=submitted_at.desc,started_at.desc&select=id,test_id,user_id,status,submitted_at,listening_score,reading_score,writing_task1_score,writing_task2_score,speaking_score,overall_band,writing_answers,tab_switches,listening_results,reading_results,listening_raw,reading_raw`);
     } catch(e_my) {
-      attempts = await dbGet('attempts', `user_id=eq.${session.id}&order=submitted_at.desc,started_at.desc&select=id,test_id,user_id,status,submitted_at,listening_score,reading_score,writing_task1_score,writing_task2_score,overall_band,writing_answers,tab_switches`);
+      attempts = await dbGet('attempts', `user_id=eq.${session.id}&order=submitted_at.desc,started_at.desc&select=id,test_id,user_id,status,submitted_at,listening_score,reading_score,writing_task1_score,writing_task2_score,overall_band,writing_answers,tab_switches,listening_results,reading_results,listening_raw,reading_raw`);
     }
     // Include all attempts that have at least started or have a score
     const typeFilter = document.getElementById('results-filter-type')?.value || 'all';
@@ -6031,14 +6103,27 @@ async function renderMyResults() {
       var lRaw = null; // not in base fetch
       var rRaw = null;
       var sp = a.speaking_score || null;
+      const mk = miniKind(test);
+      let lCell, rCell;
+      if (mk) {
+        const mt = miniRawTotal(a, mk, test);
+        const cell = miniScoreCell(mt.raw, mt.total);
+        const na = '<span style="color:var(--g4);font-size:11px;">N/A</span>';
+        lCell = mk === 'listening' ? cell : na;
+        rCell = mk === 'reading'   ? cell : na;
+      } else {
+        lCell = isWritingOnly ? '<span style="color:var(--g4);font-size:11px;">N/A</span>' : bc(ls, lRaw);
+        rCell = isWritingOnly ? '<span style="color:var(--g4);font-size:11px;">N/A</span>' : bc(rs, rRaw);
+      }
       return '<tr>' +
         '<td>' + (test.title || a.test_id) + '</td>' +
         '<td>' + (a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('en-GB') : '&#8212;') + '</td>' +
-        '<td>' + (isWritingOnly ? '<span style="color:var(--g4);font-size:11px;">N/A</span>' : bc(ls, lRaw)) + '</td>' +
-        '<td>' + (isWritingOnly ? '<span style="color:var(--g4);font-size:11px;">N/A</span>' : bc(rs, rRaw)) + '</td>' +
+        '<td>' + lCell + '</td>' +
+        '<td>' + rCell + '</td>' +
         '<td>' + wc(a.writing_task1_score, a.writing_task2_score, a.overall_band) + '</td>' +
         '<td>' + (sp ? bc(sp) : '<span style="color:var(--g4);font-size:11px;">—</span>') + '</td>' +
-        '<td>' + (a.overall_band ? bc(a.overall_band) : '<span style="color:var(--g4);">—</span>') + '</td>' +
+        '<td>' + (mk ? '<span style="color:var(--g4);font-size:11px;">N/A</span>'
+                     : (a.overall_band ? bc(a.overall_band) : '<span style="color:var(--g4);">—</span>')) + '</td>' +
         '<td>' + statusBadge + '</td>' +
         '<td style="white-space:nowrap;">' +
           '<button class="btn btn-ghost btn-sm" data-aid="' + a.id + '" onclick="viewResults(this.dataset.aid)">View</button> ' +
@@ -8173,7 +8258,22 @@ function renderResultsContent(a, test) {
   }
   if (spBand) pillsHtml += skillPill('Speaking', spBand);
 
-  const overallHtml = overall
+  // A mini paper's band is meaningless (rawToBand assumes 40 questions), so the
+  // headline is the raw count and the band pills are suppressed entirely.
+  const _mk = miniKind(test);
+  let _miniOverall = null;
+  if (_mk) {
+    const _mt = miniRawTotal(a, _mk, test);
+    if (_mt.raw !== null && _mt.total) {
+      pillsHtml = '';   // no band pills on a mini paper
+      const _pct = Math.round(_mt.raw / _mt.total * 100);
+      _miniOverall = `<div class="overall-band">${_mt.raw}<span style="font-size:26px;color:var(--g4);"> / ${_mt.total}</span></div>
+         <div class="overall-label">${_mk === 'listening' ? 'Listening' : 'Reading'} &mdash; correct answers (${_pct}%)</div>
+         <div style="font-size:11px;color:var(--g4);text-align:center;margin-top:6px;">Mini tests are not converted to a 0&ndash;9 band score.</div>`;
+    }
+  }
+
+  const overallHtml = _miniOverall ? _miniOverall : overall
     ? `<div class="overall-band">${overall}</div>
        <div class="overall-label">${isWritingOnly ? 'Writing Band Score' : 'Overall Band Score'}</div>
        <div class="band-grid">${pillsHtml}</div>`
