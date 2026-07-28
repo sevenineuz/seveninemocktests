@@ -20,7 +20,23 @@
 html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--g6);color:var(--g1);}
 .bk{font-family:'DM Serif Display',serif;color:var(--black);letter-spacing:-.4px;}
 .bb{font-family:'DM Serif Display',serif;color:var(--blue);letter-spacing:-.4px;}
-#app{min-height:100vh;}
+#app{min-height:100vh;position:relative;z-index:1;}
+/* ── ambient cursor glow ─────────────────────────────────────────────────────
+   Two offset orbs at different follow speeds give the light a little depth and
+   parallax. Softness comes from the gradient's alpha falloff rather than a CSS
+   filter: blur() on a box this large is expensive to composite every frame. */
+#glow{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
+  opacity:0;transition:opacity .9s ease;}
+#glow.on{opacity:1;}
+#glow .orb{position:absolute;top:0;left:0;border-radius:50%;will-change:transform;}
+#glow .orb-a{width:820px;height:820px;margin:-410px 0 0 -410px;
+  background:radial-gradient(circle closest-side,rgba(0,122,255,.20),rgba(0,122,255,.10) 42%,rgba(0,122,255,0) 70%);}
+#glow .orb-b{width:400px;height:400px;margin:-200px 0 0 -200px;
+  background:radial-gradient(circle closest-side,rgba(88,168,255,.22),rgba(0,122,255,.07) 52%,rgba(0,122,255,0) 76%);}
+@media (max-width:640px){
+  #glow .orb-a{width:560px;height:560px;margin:-280px 0 0 -280px;}
+  #glow .orb-b{width:280px;height:280px;margin:-140px 0 0 -140px;}
+}
 
 /* ── TOP BAR ── */
 .top-bar{height:56px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;
@@ -683,6 +699,10 @@ select.editor-input{cursor:pointer;}
 </style>
 </head>
 <body>
+<!-- Ambient brand glow that trails the cursor. Sits between the page background and
+     #app (which is z-index:1), so it washes the grey gutters without ever touching
+     readability of the white cards on top. Purely decorative. -->
+<div id="glow" aria-hidden="true"><div class="orb orb-a"></div><div class="orb orb-b"></div></div>
 <div id="app">
 
 <!-- ══════════════════════════════════════
@@ -4714,10 +4734,60 @@ function calcOverall(l, r, w) {
 /* ════════════════════════════════════════════
    ROUTING
    ════════════════════════════════════════════ */
+/* Ambient cursor glow. Deliberately limited to the login and dashboard views —
+   it must never appear behind a test, where it would be a distraction. The rAF
+   loop parks itself once the orbs settle, so an idle page costs nothing. */
+const _glow = (function () {
+  let layer, a, b, tx, ty, ax, ay, bx, by, raf = null, follow = false, ready = false;
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function place() {
+    a.style.transform = 'translate3d(' + ax.toFixed(1) + 'px,' + ay.toFixed(1) + 'px,0)';
+    b.style.transform = 'translate3d(' + bx.toFixed(1) + 'px,' + by.toFixed(1) + 'px,0)';
+  }
+  function tick() {
+    ax += (tx - ax) * 0.045; ay += (ty - ay) * 0.045;   // large orb trails behind
+    bx += (tx - bx) * 0.12;  by += (ty - by) * 0.12;    // small orb leads
+    place();
+    const settled = Math.abs(tx-ax) + Math.abs(ty-ay) + Math.abs(tx-bx) + Math.abs(ty-by) < 0.6;
+    raf = settled ? null : requestAnimationFrame(tick);
+  }
+  function onMove(e) {
+    if (!follow) return;
+    tx = e.clientX; ty = e.clientY;
+    if (!raf) raf = requestAnimationFrame(tick);
+  }
+  function stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } }
+  function init() {
+    layer = document.getElementById('glow');
+    if (!layer) return false;
+    a = layer.querySelector('.orb-a'); b = layer.querySelector('.orb-b');
+    if (!a || !b) return false;
+    tx = ax = bx = window.innerWidth / 2;
+    ty = ay = by = window.innerHeight * 0.30;
+    place();
+    window.addEventListener('pointermove', onMove, {passive: true});
+    document.addEventListener('visibilitychange', function () { if (document.hidden) stop(); });
+    ready = true;
+    return true;
+  }
+  return {
+    set: function (on) {
+      if (!ready && !init()) return;
+      layer.classList.toggle('on', !!on);
+      // With reduced motion the glow still renders, it just stops chasing the cursor.
+      follow = !!on && !reduce;
+      if (!on) stop();
+    }
+  };
+})();
+function setGlow(on) { try { _glow.set(on); } catch (e) { /* decorative only */ } }
+
 function showView(id) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   const el = document.getElementById(id);
   if (el) el.classList.add('active');
+  setGlow(id === 'view-login' || id === 'view-dashboard');
   window.scrollTo(0,0);
 }
 
@@ -8216,188 +8286,360 @@ async function loadTestLocks() {
   } catch (e) { /* keep cached localStorage copy if the server is unreachable */ }
 }
 
-function generateTestPDF(testId, includeAnswerKey) {
+// Paper version of a test — typographically faithful to a real IELTS question paper
+// (black-and-white body, serif passages, sans questions, dotted rules, filled skill
+// banners) with Sevenine branding confined to the furniture: cover, running head,
+// footer, answer sheet and answer key. Keeping colour out of the exam body is
+// deliberate — it is what makes the paper read as the real thing.
+async function generateTestPDF(testId, includeAnswerKey) {
   const test = ALL_TESTS.find(t => t.id === testId);
   if (!test) return;
+  // DB-backed tests keep their heavy blobs stripped until first use; without this the
+  // paper would come out empty for anything loaded from Supabase.
+  try { await hydrateTest(testId); } catch(e) { /* fall through with whatever we have */ }
 
-  const tt = test.test_type || 'full';
+  const tt = test.test_type || test.type || 'full';
   const isMiniL = tt === 'listening_only';
   const isMiniR = tt === 'reading_only';
   const isFull  = tt === 'full';
+  const isWritingOnly = ['writing_only','writing_full','task1_only','task2_only'].includes(tt);
 
-  // Build answer key string
-  function buildAK(ak) {
-    if (!ak || !Object.keys(ak).length) return '';
-    return Object.keys(ak).sort((a,b)=>parseInt(a)-parseInt(b))
-      .map(k => '<div style="text-align:center;min-width:40px;padding:4px;"><div style="font-size:9px;font-weight:700;color:#8E8E93;">'+k+'</div><div style="font-size:11px;font-weight:600;color:#1C1C1E;">'+String(ak[k]).toUpperCase()+'</div></div>')
-      .join('');
+  const LD = test.listening_data || null;
+  const RD = test.reading_data || null;
+  const WD = test.writing_data || null;
+
+  const esc = s => String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  // Rewrite the interactive on-screen markup into something that prints like an exam
+  // paper: no click handlers, no pill buttons, no filled panels, no rounded corners.
+  function printify(html) {
+    if (!html) return '';
+    let h = String(html);
+    h = h.replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '');           // drop handlers
+    h = h.replace(/\sid\s*=\s*"(lq|q)\d+"/gi, '');              // drop duplicate ids
+    // text inputs -> ruled answer space
+    h = h.replace(/<input\b[^>]*class="[^"]*\bil\b[^"]*"[^>]*>/gi, '<span class="rule"></span>');
+    h = h.replace(/<input\b[^>]*>/gi, '<span class="rule"></span>');
+    // the on-screen "Selected: 0 / 2" counters mean nothing on paper
+    h = h.replace(/<div[^>]*id="ms-count-\d+"[^>]*>[\s\S]*?<\/div>/gi, '');
+    h = h.replace(/<div[^>]*>\s*Select \d+ \(for questions [\d-]+\)\s*<\/div>/gi, '');
+    // neutralise the screen palette that leaks in through inline styles
+    h = h.replace(/background\s*:\s*var\(--g6\)/gi, 'background:#fff;border:.8pt solid #111');
+    h = h.replace(/border-radius\s*:\s*\d+px/gi, 'border-radius:0');
+    h = h.replace(/color\s*:\s*var\(--g[0-9]\)/gi, 'color:#000');
+    h = h.replace(/color\s*:\s*var\(--blue\)/gi, 'color:#000');
+    return h;
   }
 
-  // Strip HTML tags for plain text rendering in PDF
-  function stripHtml(str) {
-    if (!str) return '';
-    return str.replace(/<[^>]+>/g,' ').replace(/&[a-z0-9#]+;/g,' ').replace(/\s+/g,' ').trim();
-  }
-
-  // Build sections HTML
-  let sectionsHtml = '';
-
-  if (isMiniL || isFull) {
-    const secs = test.listening_data?.sections || [];
-    const lAK  = test.listening_data?.answer_key || {};
-    if (secs.length) {
-      sectionsHtml += '<div style="margin-bottom:18px;">';
-      sectionsHtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#007AFF;border-bottom:1px solid #E5E5EA;padding-bottom:4px;margin-bottom:10px;">Listening</div>';
-      secs.forEach((s,i) => {
-        let qHtml = s.questions_html || s.questions || '';
-        // For Cambridge tests, questions are in getListeningQHTML, not stored in sections
-        if (!qHtml && typeof getListeningQHTML === 'function') {
-          const prevTest = currentTest;
-          currentTest = test;
-          try { qHtml = getListeningQHTML(s.id || ('s'+(i+1))); } catch(e) { qHtml = ''; }
-          currentTest = prevTest;
-        }
-        sectionsHtml += '<div style="margin-bottom:12px;page-break-inside:avoid;">';
-        sectionsHtml += '<div style="font-size:11px;font-weight:700;color:#1C1C1E;margin-bottom:6px;">Section '+(i+1)+(s.subtitle?' · '+s.subtitle:'')+'</div>';
-        if (qHtml) sectionsHtml += '<div style="font-size:11px;color:#1C1C1E;line-height:1.8;">'+qHtml+'</div>';
-        sectionsHtml += '</div>';
-      });
-      if (includeAnswerKey && Object.keys(lAK).length) {
-        sectionsHtml += '<div style="background:#FFF8EC;border:1px solid #FAC775;border-radius:6px;padding:8px 12px;margin-top:8px;">';
-        sectionsHtml += '<div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#854F0B;margin-bottom:6px;">Listening answer key</div>';
-        sectionsHtml += '<div style="display:flex;flex-wrap:wrap;gap:2px;">'+buildAK(lAK)+'</div></div>';
-      }
-      sectionsHtml += '</div>';
+  function listeningQHtml(sec, i) {
+    let q = sec.questions_html || sec.questions || '';
+    if (!q && typeof getListeningQHTML === 'function') {
+      const prev = currentTest; currentTest = test;
+      try { q = getListeningQHTML(sec.id || ('s'+(i+1))); } catch(e) { q = ''; }
+      currentTest = prev;
     }
-  }
-
-  if (isMiniR || isFull) {
-    const passages = test.reading_data?.passages || [];
-    const rAK = test.reading_data?.answer_key || {};
-    if (passages.length) {
-      sectionsHtml += '<div style="margin-bottom:18px;">';
-      sectionsHtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#007AFF;border-bottom:1px solid #E5E5EA;padding-bottom:4px;margin-bottom:10px;">Reading</div>';
-      passages.forEach((p,i) => {
-        sectionsHtml += '<div style="margin-bottom:20px;page-break-inside:avoid;">';
-        sectionsHtml += '<div style="font-size:12px;font-weight:700;color:#1C1C1E;margin-bottom:8px;">Passage '+(i+1)+': '+(p.title||'')+'</div>';
-        if (p.body) {
-          sectionsHtml += '<div style="font-size:10px;color:#333;line-height:1.6;background:#F9F9F9;padding:10px 12px;border-radius:4px;border-left:3px solid #007AFF;margin-bottom:10px;">'+p.body+'</div>';
-        }
-        // For Cambridge tests, questions are in getReadingQuestionsHTML, not p.questions_html
-        // Try p.questions_html first, fall back to getReadingQuestionsHTML
-        let qHtml = p.questions_html || p.questions || '';
-        if (!qHtml && typeof getReadingQuestionsHTML === 'function') {
-          // Temporarily set currentTest so getReadingQuestionsHTML works
-          const prevTest = currentTest;
-          currentTest = test;
-          try { qHtml = getReadingQuestionsHTML(p.id); } catch(e) { qHtml = ''; }
-          currentTest = prevTest;
-        }
-        if (qHtml) {
-          sectionsHtml += '<div style="font-size:11px;color:#1C1C1E;line-height:1.8;">'+qHtml+'</div>';
-        }
-        sectionsHtml += '</div>';
-      });
-      if (includeAnswerKey && Object.keys(rAK).length) {
-        sectionsHtml += '<div style="background:#FFF8EC;border:1px solid #FAC775;border-radius:6px;padding:8px 12px;margin-top:8px;">';
-        sectionsHtml += '<div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#854F0B;margin-bottom:6px;">Reading answer key</div>';
-        sectionsHtml += '<div style="display:flex;flex-wrap:wrap;gap:2px;">'+buildAK(rAK)+'</div></div>';
-      }
-      sectionsHtml += '</div>';
+    q = printify(q);
+    const r = sec.q_range;
+    if (r && r.length === 2) {
+      // 'PART 1  Questions 1-10' already states the range; the real paper does not repeat it
+      const dup = new RegExp('<div class="q-group-title">\\s*Questions\\s*' + r[0] + '\\s*(?:&#8211;|&ndash;|-|\u2013)\\s*' + r[1] + '\\s*</div>', 'i');
+      q = q.replace(dup, '');
     }
+    return q;
   }
-
-  if (isFull && test.writing_data) {
-    const t1 = test.writing_data.task1?.prompt || '';
-    const t2 = test.writing_data.task2?.prompt || '';
-    if (t1 || t2) {
-      sectionsHtml += '<div style="margin-bottom:18px;">';
-      sectionsHtml += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#007AFF;border-bottom:1px solid #E5E5EA;padding-bottom:4px;margin-bottom:10px;">Writing</div>';
-      if (t1) sectionsHtml += '<div style="margin-bottom:10px;"><div style="font-size:10px;font-weight:700;color:#1C1C1E;margin-bottom:4px;">Task 1</div><div style="font-size:11px;color:#444;line-height:1.6;">'+t1+'</div></div>';
-      if (t2) sectionsHtml += '<div><div style="font-size:10px;font-weight:700;color:#1C1C1E;margin-bottom:4px;">Task 2</div><div style="font-size:11px;color:#444;line-height:1.6;">'+t2+'</div></div>';
-      sectionsHtml += '</div>';
+  function readingQHtml(p) {
+    let q = p.questions_html || p.questions || '';
+    if (!q && typeof getReadingQuestionsHTML === 'function') {
+      const prev = currentTest; currentTest = test;
+      try { q = getReadingQuestionsHTML(p.id); } catch(e) { q = ''; }
+      currentTest = prev;
     }
+    return printify(q);
   }
 
-  const typeLabel = isMiniL ? 'Mini Listening' : isMiniR ? 'Mini Reading' : isFull ? 'Full Test' : 'Writing';
-  const akLabel   = includeAnswerKey ? ' + Answer Key' : '';
+  const pages = [];
 
-  const docHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>${test.title}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:Georgia,serif;font-size:12px;color:#1C1C1E;background:white;padding:24px 32px;margin:0;}
-  @media print{body{padding:20px 28px;}@page{margin:15mm;}}
-  .header{text-align:center;border-bottom:2px solid #1a1a2e;padding-bottom:14px;margin-bottom:20px;}
-  .brand{font-family:-apple-system,Arial,sans-serif;font-size:22px;font-weight:700;color:#1a1a2e;letter-spacing:-.5px;}
-  .brand span{color:#007AFF;}
-  .test-title{font-size:14px;color:#444;margin-top:5px;}
-  .meta{font-size:10px;color:#8E8E93;margin-top:3px;}
-  .footer{border-top:1px solid #E5E5EA;padding-top:8px;margin-top:24px;display:flex;justify-content:space-between;font-family:-apple-system,Arial,sans-serif;font-size:9px;color:#8E8E93;}
-  .tfng-pill,.mc-opt,.tfng-pills,.mc-options{display:inline;border:none;background:none;padding:0;}
-  .tfng-pills{display:inline-flex;gap:4px;}
-  .tfng-pill,.mc-opt{border:1px solid #ccc;border-radius:4px;padding:1px 6px;font-size:10px;margin-right:3px;}
-  input.il{border:none;border-bottom:1px solid #999;width:80px;background:transparent;}
-  .q-num{font-weight:700;color:#007AFF;margin-right:4px;}
-  .q-group{margin-bottom:12px;}
-  .q-group-title{font-weight:700;font-size:12px;margin-bottom:4px;}
-  .q-group-instr{font-size:10px;color:#555;margin-bottom:6px;}
-  .tfng-row{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;font-size:11px;}
-  .tfng-q{flex:1;}
-  .ans-blank{display:inline-block;width:80px;border-bottom:1px solid #999;margin-left:6px;}
-  .q-panel-header{margin-bottom:10px;}
-  .q-panel-badge{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#007AFF;margin-bottom:4px;}
-  .q-panel-title{font-size:13px;font-weight:700;color:#1C1C1E;}
-  .q-group{margin-bottom:14px;}
-  .q-group-title{font-size:12px;font-weight:700;color:#1C1C1E;margin-bottom:4px;border-bottom:1px solid #E5E5EA;padding-bottom:3px;}
-  .q-group-instr{font-size:10px;color:#555;margin-bottom:8px;line-height:1.5;}
-  .tfng-row{display:flex;align-items:flex-start;gap:8px;margin-bottom:7px;font-size:11px;line-height:1.5;}
-  .tfng-q{flex:1;}
-  .tfng-pills{display:flex;gap:4px;flex-shrink:0;}
-  .tfng-pill{border:1px solid #999;border-radius:4px;padding:1px 7px;font-size:10px;cursor:default;}
-  .tfng-pill.sel-t,.tfng-pill.sel-y{background:#34C75933;}
-  .tfng-pill.sel-f,.tfng-pill.sel-n{background:#FF3B3033;}
-  .tfng-pill.sel-ng{background:#8E8E9333;}
-  .mc-options{margin:6px 0 10px;}
-  .mc-opt{display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #ddd;border-radius:5px;margin-bottom:4px;font-size:11px;}
-  .mc-opt.selected{background:#E6F1FB;border-color:#007AFF;}
-  .opt-letter{font-weight:700;color:#007AFF;min-width:14px;}
-  .ms-opt{display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid #ddd;border-radius:5px;margin-bottom:4px;font-size:11px;}
-  .il,.il.wide{border:none;border-bottom:1.5px solid #999;background:transparent;min-width:70px;font-size:11px;}
-  input::placeholder{color:transparent !important;}
-  input::-webkit-input-placeholder{color:transparent !important;}
-  input::-moz-placeholder{color:transparent !important;}
-  .ans-highlight,.ans-highlight-num{display:none;}
-  img{max-width:100%;border-radius:6px;}
-  @page{margin:10mm 12mm;size:A4;}
-  @media print{
-    @page{margin:10mm 12mm;}
-    body{padding:0;}
-    .tfng-pill{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .mc-opt{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .header{page-break-after:avoid;}
+  // ── Cover ────────────────────────────────────────────────────────────────
+  const skills = [];
+  if ((isFull || isMiniL) && LD) skills.push('Listening');
+  if ((isFull || isMiniR) && RD) skills.push('Reading');
+  if ((isFull || isWritingOnly) && WD) skills.push('Writing');
+  const qCounts = [];
+  if ((isFull||isMiniL) && LD) qCounts.push('40 questions in the Listening paper');
+  if ((isFull||isMiniR) && RD) {
+    const rq = (RD.passages||[]).reduce((n,p)=>n+(p.q_range?p.q_range[1]-p.q_range[0]+1:0),0);
+    if (rq) qCounts.push(rq + ' questions in the Reading paper');
   }
-</style>
-</head><body>
-<div class="header">
-  <div class="brand">Seve<span>n</span>ine</div>
-  <div class="test-title">${test.title}</div>
-  <div class="meta">${typeLabel}${akLabel} &nbsp;·&nbsp; ${test.description || 'IELTS Academic Practice'}</div>
-</div>
-${sectionsHtml}
-<div class="footer">
-  <span>Sevenine English School · Tashkent</span>
-  <span>${new Date().toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'})}</span>
-</div>
-<script>window.onload=()=>{setTimeout(()=>{window.print();},800);}<\/script>
-</body></html>`;
+  const mins = (isFull ? (test.time_listening||40)+(test.time_reading||60)+(test.time_writing||60)
+              : isMiniL ? (test.time_listening||30) : isMiniR ? (test.time_reading||60) : (test.time_writing||40));
+  const timeStr = mins >= 60 ? (Math.floor(mins/60) + (Math.floor(mins/60)>1?' hours':' hour') + (mins%60?' '+(mins%60)+' minutes':'')) : mins + ' minutes';
+
+  pages.push(
+    '<section class="pg cover">' +
+      '<div class="cov-brand">' +
+        '<div class="wordmark"><span class="wm-k">Seve</span><span class="wm-b">n</span><span class="wm-k">ine</span></div>' +
+        '<div class="cov-sub">English School &middot; Tashkent</div>' +
+      '</div>' +
+      '<div class="cov-rule"></div>' +
+      '<div class="cov-exam">International English Language Testing System</div>' +
+      '<div class="cov-type">Academic ' + skills.map(esc).join(' &middot; ') + '</div>' +
+      '<div class="cov-title">' + esc(test.title || 'Practice Test') + '</div>' +
+      '<div class="cov-rule"></div>' +
+      '<div class="cov-fields">' +
+        '<div class="cf"><span class="cf-l">Candidate name</span><span class="cf-r"></span></div>' +
+        '<div class="cf"><span class="cf-l">Candidate number</span><span class="cf-r"></span></div>' +
+        '<div class="cf"><span class="cf-l">Centre / Class</span><span class="cf-r"></span></div>' +
+        '<div class="cf"><span class="cf-l">Date</span><span class="cf-r"></span></div>' +
+      '</div>' +
+      '<div class="cov-time"><span class="ct-k">Time</span><span class="ct-v">' + timeStr + '</span></div>' +
+      '<div class="cov-instr">' +
+        '<h4>Instructions to candidates</h4>' +
+        '<ul>' +
+          '<li>Do not open this question paper until you are told to do so.</li>' +
+          '<li>Write your name and candidate number in the spaces at the top of this page.</li>' +
+          '<li>Read the instructions for each part of the paper carefully.</li>' +
+          '<li>Answer <b>all</b> the questions.</li>' +
+          '<li>Write your answers in the spaces provided on the answer sheet.</li>' +
+          '<li>At the end of the test, hand in both this question paper and your answer sheet.</li>' +
+        '</ul>' +
+        '<h4>Information for candidates</h4>' +
+        '<ul>' +
+          (qCounts.length ? '<li>There are ' + qCounts.join(' and ') + '.</li>' : '') +
+          '<li>Each question carries one mark.</li>' +
+          (skills.indexOf('Writing') > -1 ? '<li>The Writing paper is marked against the official IELTS band descriptors.</li>' : '') +
+        '</ul>' +
+      '</div>' +
+      '<div class="cov-foot">Sevenine English School &middot; IELTS Practice Paper</div>' +
+    '</section>');
+
+  // ── Listening ────────────────────────────────────────────────────────────
+  if ((isFull || isMiniL) && LD && (LD.sections||[]).length) {
+    let body = '<div class="banner">Listening</div>';
+    (LD.sections||[]).forEach((s,i) => {
+      const r = s.q_range || [];
+      body += '<div class="part' + (i ? ' part-break' : '') + '">' +
+        '<div class="part-head"><span class="part-n">Part ' + (i+1) + '</span>' +
+          (r.length ? '<span class="part-q">Questions ' + r[0] + '&ndash;' + r[1] + '</span>' : '') + '</div>' +
+        (s.subtitle ? '<div class="part-sub">' + esc(s.subtitle) + '</div>' : '') +
+        '<div class="qbody">' + listeningQHtml(s, i) + '</div></div>';
+    });
+    pages.push('<section class="pg">' + body + '</section>');
+  }
+
+  // ── Reading ──────────────────────────────────────────────────────────────
+  if ((isFull || isMiniR) && RD && (RD.passages||[]).length) {
+    (RD.passages||[]).forEach((p,i) => {
+      const r = p.q_range || [];
+      let body = (i === 0 ? '<div class="banner">Reading</div>' : '');
+      body += '<div class="rp-head">Reading Passage ' + (i+1) + '</div>';
+      if (r.length) body += '<div class="rp-instr">You should spend about 20 minutes on <b>Questions ' + r[0] +
+        '&ndash;' + r[1] + '</b>, which are based on Reading Passage ' + (i+1) + ' below.</div>';
+      body += '<div class="passage">' + printify(p.body || '') + '</div>';
+      body += '<div class="qbody qbody-r">' + readingQHtml(p) + '</div>';
+      pages.push('<section class="pg">' + body + '</section>');
+    });
+  }
+
+  // ── Writing ──────────────────────────────────────────────────────────────
+  if ((isFull || isWritingOnly) && WD) {
+    const t1 = WD.task1 || null, t2 = WD.task2 || null;
+    let body = '<div class="banner">Writing</div>';
+    if (t1 && t1.prompt) {
+      body += '<div class="part"><div class="part-head"><span class="part-n">Writing Task 1</span></div>' +
+        '<div class="rp-instr">You should spend about 20 minutes on this task.</div>' +
+        '<div class="taskbox">' + t1.prompt + '</div>';
+      if (t1.visual_type === 'svg' && t1.visual) body += '<div class="visual">' + t1.visual + '</div>';
+      else if (t1.visual_type === 'image' && t1.visual) body += '<div class="visual"><img src="' + t1.visual + '" alt=""></div>';
+      body += '<div class="wc-note">Write at least 150 words.</div></div>';
+    }
+    if (t2 && t2.prompt) {
+      body += '<div class="part' + (t1 && t1.prompt ? ' part-break' : '') + '">' +
+        '<div class="part-head"><span class="part-n">Writing Task 2</span></div>' +
+        '<div class="rp-instr">You should spend about 40 minutes on this task.</div>' +
+        '<div class="taskbox">' + t2.prompt + '</div>' +
+        '<div class="wc-note">Write at least 250 words.</div></div>';
+    }
+    pages.push('<section class="pg">' + body + '</section>');
+  }
+
+  // ── Answer sheet ─────────────────────────────────────────────────────────
+  function answerSheet(label, from, to) {
+    let rows = '';
+    for (let n = from; n <= to; n++) rows += '<div class="as-row"><span class="as-n">' + n + '</span><span class="as-l"></span></div>';
+    // column-major like a real answer sheet: 1-20 down the left, 21-40 down the right
+    const perCol = Math.ceil((to - from + 1) / 2);
+    return '<div class="as-block"><div class="as-head">' + label + '</div>' +
+      '<div class="as-grid" style="grid-template-rows:repeat(' + perCol + ',auto);">' + rows + '</div></div>';
+  }
+  const sheets = [];
+  if ((isFull || isMiniL) && LD && (LD.sections||[]).length) sheets.push(answerSheet('Listening', 1, 40));
+  if ((isFull || isMiniR) && RD && (RD.passages||[]).length) {
+    const ps = RD.passages || [];
+    const last = ps[ps.length-1].q_range ? ps[ps.length-1].q_range[1] : 40;
+    sheets.push(answerSheet('Reading', 1, last));
+  }
+  if (sheets.length) {
+    pages.push('<section class="pg">' +
+      '<div class="banner banner-alt">Answer Sheet</div>' +
+      '<div class="as-meta">' +
+        '<div class="cf"><span class="cf-l">Candidate name</span><span class="cf-r"></span></div>' +
+        '<div class="cf"><span class="cf-l">Date</span><span class="cf-r"></span></div>' +
+      '</div>' + sheets.join('') + '</section>');
+  }
+
+  // ── Answer key (teacher copy) ────────────────────────────────────────────
+  if (includeAnswerKey) {
+    function keyGrid(ak) {
+      if (!ak || !Object.keys(ak).length) return '';
+      const keys = Object.keys(ak).sort((a,b) => parseInt(a) - parseInt(b));
+      return '<div class="ak-grid">' + keys.map(k =>
+        '<div class="ak-cell"><span class="ak-n">' + esc(k) + '</span><span class="ak-v">' + esc(ak[k]) + '</span></div>').join('') + '</div>';
+    }
+    let body = '<div class="banner banner-alt">Answer Key</div><div class="ak-note">Teacher copy &mdash; not for distribution to candidates.</div>';
+    if (LD && LD.answer_key && Object.keys(LD.answer_key).length) body += '<div class="ak-sec"><h5>Listening</h5>' + keyGrid(LD.answer_key) + '</div>';
+    if (RD && RD.answer_key && Object.keys(RD.answer_key).length) body += '<div class="ak-sec"><h5>Reading</h5>' + keyGrid(RD.answer_key) + '</div>';
+    pages.push('<section class="pg">' + body + '</section>');
+  }
+
+  const dateStr = new Date().toLocaleDateString('en-GB', {day:'numeric', month:'long', year:'numeric'});
+
+  const docHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+'<title>' + esc(test.title) + (includeAnswerKey ? ' — with answer key' : '') + '</title>' +
+'<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
+'<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet">' +
+'<style>' +
+'*{box-sizing:border-box;margin:0;padding:0;}' +
+':root{--ink:#000;--rule:#000;--soft:#555;--brand:#007AFF;}' +
+'@page{size:A4;margin:17mm 16mm 16mm;}' +
+// Exam body: neutral sans for questions, serif for passages — as in the real paper.
+'body{font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;line-height:1.45;color:var(--ink);background:#fff;}' +
+'.pg{page-break-after:always;}' +
+'.pg:last-child{page-break-after:auto;}' +
+
+// ── running head / footer (the branded furniture) ──
+'.sheet{width:100%;border-collapse:collapse;}' +
+'.sheet>thead>tr>td,.sheet>tfoot>tr>td,.sheet>tbody>tr>td{padding:0;border:none;}' +
+'.run-head{display:flex;justify-content:space-between;align-items:baseline;' +
+  'font-size:7.5pt;color:var(--soft);border-bottom:.4pt solid #bbb;padding-bottom:2mm;margin-bottom:5mm;}' +
+'.run-head .rh-b{font-family:"DM Serif Display",Georgia,serif;font-size:9pt;color:#111;letter-spacing:-.2px;}' +
+'.run-head .rh-b i{color:var(--brand);font-style:normal;}' +
+'.run-foot{display:flex;justify-content:space-between;' +
+  'font-size:7pt;color:#8a8a8a;border-top:.4pt solid #ddd;padding-top:1.6mm;margin-top:5mm;}' +
+
+// ── cover ──
+'.cover{padding-top:6mm;text-align:center;}' +
+'.cov-brand{margin-bottom:7mm;}' +
+'.wordmark{font-family:"DM Serif Display",Georgia,serif;font-size:30pt;letter-spacing:-1px;line-height:1;}' +
+'.wm-k{color:#111;}.wm-b{color:var(--brand);}' +
+'.cov-sub{font-size:8pt;letter-spacing:.24em;text-transform:uppercase;color:var(--soft);margin-top:3mm;}' +
+'.cov-rule{height:1.6pt;background:#111;margin:5mm auto;width:100%;}' +
+'.cov-exam{font-size:9pt;letter-spacing:.13em;text-transform:uppercase;color:var(--soft);}' +
+'.cov-type{font-size:13pt;font-weight:700;letter-spacing:.05em;text-transform:uppercase;margin-top:2mm;}' +
+'.cov-title{font-family:"DM Serif Display",Georgia,serif;font-size:22pt;margin-top:4mm;line-height:1.15;}' +
+'.cov-fields{text-align:left;margin:6mm 0 0;}' +
+'.cf{display:flex;align-items:baseline;gap:4mm;margin-bottom:4.5mm;}' +
+'.cf-l{font-size:9pt;color:#111;min-width:42mm;}' +
+'.cf-r{flex:1;border-bottom:.7pt dotted #444;height:5mm;}' +
+'.cov-time{display:flex;gap:4mm;align-items:baseline;text-align:left;border:1pt solid #111;padding:3.5mm 4mm;margin-top:3mm;}' +
+'.ct-k{font-size:8pt;letter-spacing:.18em;text-transform:uppercase;color:var(--soft);}' +
+'.ct-v{font-size:11.5pt;font-weight:700;}' +
+'.cov-instr{text-align:left;margin-top:6mm;}' +
+'.cov-instr h4{font-size:8.5pt;letter-spacing:.16em;text-transform:uppercase;margin:5mm 0 2.5mm;padding-bottom:1.4mm;border-bottom:.5pt solid #111;}' +
+'.cov-instr ul{list-style:none;}' +
+'.cov-instr li{font-size:9.5pt;line-height:1.6;padding-left:5mm;position:relative;}' +
+'.cov-instr li:before{content:"\\2022";position:absolute;left:0;color:var(--brand);}' +
+'.cov-foot{margin-top:7mm;font-size:7.5pt;letter-spacing:.16em;text-transform:uppercase;color:#9a9a9a;}' +
+
+// ── skill banner: the filled black bar of the real paper ──
+'.banner{background:#111;color:#fff;font-size:12pt;font-weight:700;letter-spacing:.3em;text-transform:uppercase;' +
+  'text-align:center;padding:3mm 0;margin:0 0 7mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
+'.banner-alt{background:var(--brand);}' +
+
+// ── part / passage headings ──
+'.part{margin-bottom:7mm;}' +
+'.part-break{page-break-before:always;padding-top:2mm;}' +
+'.part-head{display:flex;align-items:baseline;gap:7mm;margin-bottom:2mm;}' +
+'.part-n{font-size:12pt;font-weight:700;letter-spacing:.06em;text-transform:uppercase;}' +
+'.part-q{font-size:11.5pt;font-weight:700;font-style:italic;}' +
+'.part-sub{font-size:10pt;font-style:italic;color:var(--soft);margin-bottom:3.5mm;}' +
+'.rp-head{font-size:12pt;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:2.5mm;}' +
+'.rp-instr{font-size:10pt;font-style:italic;margin-bottom:4mm;}' +
+'.passage{font-family:Georgia,"Times New Roman",serif;font-size:10.5pt;line-height:1.58;text-align:justify;margin-bottom:7mm;}' +
+'.passage h2{font-family:Georgia,serif;font-size:15pt;text-align:center;margin-bottom:4mm;font-weight:700;}' +
+'.passage p{margin-bottom:3.2mm;}' +
+'.passage strong{font-weight:700;}' +
+
+// ── question body: strip every trace of the on-screen widget styling ──
+'.qbody{font-size:10.5pt;}' +
+'.qbody .q-panel-header,.qbody .q-panel-badge{display:none;}' +
+'.qbody .q-panel-title{display:none;}' +
+'.qbody .q-group{margin-bottom:6mm;}' +
+'.qbody .q-group-title{font-size:11pt;font-weight:700;font-style:italic;margin-bottom:2mm;}' +
+'.qbody .q-group-instr{font-size:10pt;font-style:italic;margin-bottom:3.5mm;line-height:1.5;}' +
+'.qbody .q-row{display:flex;gap:4mm;margin-bottom:3mm;page-break-inside:avoid;}' +
+'.qbody .q-num{font-weight:700;min-width:6mm;color:#000;}' +
+'.qbody .q-stem{margin-bottom:1.5mm;}' +
+'.qbody .mc-options,.qbody .ms-options{margin:1.5mm 0 3mm 6mm;}' +
+'.qbody .mc-opt,.qbody .ms-opt{display:flex;gap:3mm;border:none;background:none;padding:.6mm 0;margin:0;border-radius:0;font-size:10.5pt;}' +
+'.qbody .opt-letter{font-weight:700;color:#000;min-width:5mm;}' +
+// TRUE/FALSE/NOT GIVEN is written on the answer sheet, so the pills go away entirely
+'.qbody .tfng-pills{display:none;}' +
+'.qbody .tfng-row{display:flex;gap:4mm;margin-bottom:2.6mm;page-break-inside:avoid;}' +
+'.qbody .tfng-q{flex:1;}' +
+'.qbody .notes-card{background:#fff;border:.8pt solid #111;border-radius:0;padding:3.5mm 4mm;margin-bottom:4mm;page-break-inside:avoid;}' +
+'.qbody .notes-card-title{font-size:10.5pt;font-weight:700;letter-spacing:0;text-transform:none;text-align:center;margin-bottom:2.5mm;}' +
+'.qbody .notes-item{font-size:10.5pt;margin-bottom:1.8mm;display:block;}' +
+'.qbody .notes-subhead{font-weight:700;margin:2.5mm 0 1.5mm;}' +
+'.qbody .sc-row{display:flex;gap:2.5mm;align-items:baseline;}' +
+'.qbody .sc-num{font-weight:700;color:#000;min-width:5mm;}' +
+'.qbody .sc-text{flex:1;}' +
+'.qbody .summary-block{background:#fff;padding:0;line-height:1.9;font-size:10.5pt;}' +
+'.qbody .q-table{width:100%;border-collapse:collapse;margin:2mm 0 4mm;font-size:10pt;}' +
+'.qbody .q-table th,.qbody .q-table td{border:.7pt solid #111;padding:2mm 2.5mm;text-align:left;vertical-align:top;}' +
+'.qbody .q-table th{background:#fff;font-weight:700;}' +
+// the ruled answer space that replaces every input
+'.rule{display:inline-block;min-width:26mm;border-bottom:.7pt dotted #333;height:3.6mm;vertical-align:baseline;margin:0 1mm;}' +
+'.qbody img{max-width:100%;border-radius:0;}' +
+'.qbody hr{border:none;border-top:.4pt solid #bbb;margin:3mm 0;}' +
+
+// ── writing ──
+'.taskbox{border:1pt solid #111;padding:4.5mm 5mm;font-size:11pt;line-height:1.55;margin-bottom:5mm;}' +
+'.visual{text-align:center;margin:5mm 0;page-break-inside:avoid;}' +
+'.visual svg,.visual img{max-width:100%;height:auto;}' +
+'.wc-note{font-size:10.5pt;font-weight:700;}' +
+
+// ── answer sheet ──
+'.as-meta{margin-bottom:6mm;}' +
+'.as-block{margin-bottom:7mm;page-break-inside:avoid;}' +
+'.as-head{font-size:9pt;font-weight:700;letter-spacing:.2em;text-transform:uppercase;border-bottom:1pt solid #111;padding-bottom:1.5mm;margin-bottom:3.5mm;}' +
+'.as-grid{display:grid;grid-auto-flow:column;grid-template-columns:repeat(2,1fr);gap:0 12mm;}' +
+'.as-row{display:flex;align-items:baseline;gap:3mm;padding:1.5mm 0;border-bottom:.4pt dotted #bbb;}' +
+'.as-n{font-size:9pt;font-weight:700;min-width:7mm;color:var(--soft);}' +
+'.as-l{flex:1;height:4mm;}' +
+
+// ── answer key ──
+'.ak-note{font-size:9pt;font-style:italic;color:var(--soft);margin-bottom:5mm;}' +
+'.ak-sec{margin-bottom:6mm;page-break-inside:avoid;}' +
+'.ak-sec h5{font-size:9pt;font-weight:700;letter-spacing:.2em;text-transform:uppercase;border-bottom:.7pt solid #111;padding-bottom:1.5mm;margin-bottom:3mm;}' +
+'.ak-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1.6mm 4mm;}' +
+'.ak-cell{display:flex;gap:2.5mm;align-items:baseline;font-size:9.5pt;border-bottom:.4pt dotted #ccc;padding-bottom:1mm;}' +
+'.ak-n{font-weight:700;color:var(--brand);min-width:7mm;}' +
+'.ak-v{flex:1;}' +
+'</style></head><body>' +
+'<table class="sheet"><thead><tr><td>' +
+'<div class="run-head"><span class="rh-b">Seve<i>n</i>ine</span><span>' + esc(test.title || '') + '</span></div>' +
+'</td></tr></thead><tfoot><tr><td>' +
+'<div class="run-foot"><span>Sevenine English School &middot; Tashkent</span><span>' + dateStr + '</span></div>' +
+'</td></tr></tfoot><tbody><tr><td>' +
+pages.join('') +
+'</td></tr></tbody></table>' +
+'<scr' + 'ipt>window.onload=function(){setTimeout(function(){window.print();},1200);};</scr' + 'ipt>' +
+'</body></html>';
 
   const win = window.open('', '_blank');
-  if (win) {
-    win.document.open();
-    win.document.write(docHtml);
-    win.document.close();
-  }
+  if (win) { win.document.open(); win.document.write(docHtml); win.document.close(); }
+  return docHtml;
 }
 
 async function deleteTest(id, title) {
