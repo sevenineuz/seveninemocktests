@@ -649,7 +649,47 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--g6);colo
 .pub-head span:not(:first-child),.pub-row span:not(:first-child){text-align:right;}
 .pub-row{padding:10px 0;border-bottom:1px solid var(--g6);font-size:13px;}
 .pub-row:last-child{border-bottom:none;}
-.pub-row.me{background:var(--blu-lt);border-radius:9px;padding:10px 8px;margin:0 -8px;border-bottom:none;}
+.pub-item{border-bottom:1px solid var(--g6);}
+.pub-item:last-child{border-bottom:none;}
+.pub-item .pub-row{border-bottom:none;cursor:pointer;user-select:none;border-radius:9px;
+  padding:10px 8px;margin:0 -8px;transition:background .15s;}
+.pub-item .pub-row:hover{background:var(--g6);}
+.pub-item .pub-row:focus-visible{outline:2px solid var(--blue);outline-offset:-2px;}
+.pub-caret{display:inline-block;font-style:normal;color:var(--g4);margin-right:7px;
+  transition:transform .18s ease;}
+.pub-item.open .pub-caret{transform:rotate(90deg);color:var(--blue);}
+.pub-you{font-style:normal;font-size:10px;font-weight:700;color:var(--blue);
+  text-transform:uppercase;letter-spacing:.05em;margin-left:5px;}
+.pub-detail{display:none;}
+.pub-item.open .pub-detail{display:block;}
+.pub-detail-in{padding:4px 2px 16px;}
+.pub-sub{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--g4);margin:12px 0 9px;}
+.ps-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px;}
+.ps{background:var(--g6);border-radius:11px;padding:11px 13px;}
+.ps-k{font-size:11px;font-weight:600;color:var(--g3);margin-bottom:5px;}
+.ps-v{display:flex;align-items:baseline;gap:7px;}
+.ps-mock{font-size:17px;font-weight:600;color:var(--g3);}
+.ps-v i{font-style:normal;color:var(--g4);font-size:12px;}
+.ps-real{font-family:'DM Serif Display',serif;font-size:22px;color:var(--blue);line-height:1;}
+.ps-d{font-size:11px;font-weight:700;color:var(--g4);margin-top:3px;}
+.ps-d.up{color:var(--green);} .ps-d.down{color:var(--orange);}
+.ps-s{font-size:10px;color:var(--g4);margin-top:2px;}
+.pt-head,.pt-row{display:grid;grid-template-columns:1fr 92px 42px 42px 42px 58px;gap:6px;align-items:center;}
+.pt-head{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--g4);
+  padding-bottom:7px;border-bottom:1px solid var(--g5);}
+.pt-head span:not(:first-child),.pt-row span:not(:first-child){text-align:right;}
+.pt-row{font-size:12px;padding:8px 0;border-bottom:1px solid var(--g6);color:var(--g2);}
+.pt-row:last-child{border-bottom:none;}
+.pt-n{color:var(--g1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pt-d{font-size:11px;color:var(--g4);}
+.pt-o{font-weight:700;color:var(--g1);}
+.pub-empty{font-size:12px;color:var(--g4);padding:10px 2px 16px;}
+@media (max-width:560px){
+  .pt-head,.pt-row{grid-template-columns:1fr 36px 36px 36px 50px;}
+  .pt-head span:nth-child(2),.pt-row span:nth-child(2){display:none;}
+}
+.pub-row.me{background:var(--blu-lt);}
 .pub-n{color:var(--g1);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .pub-n i{font-style:normal;font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.05em;}
 .pub-m{color:var(--g3);}
@@ -5253,6 +5293,79 @@ let _sbType   = 'full';  // 'full', 'listening', 'reading'
    is the gate: official_results.published must be true before a row appears in
    v_published_results, and once it is, every user sees it with the student's name.
    Nothing unpublished is ever exposed to the page. */
+/* Expanded card: how this student's mock scores compared with their real result,
+   skill by skill, plus every test they sat. Mock skill figures are the mean of all
+   attempts where that skill was scored — mini tests only carry one skill, so each
+   is averaged independently rather than assuming every test has all four. */
+const _PUB_SKILLS = [
+  ['Listening', 'listening_score', 'listening_band'],
+  ['Reading',   'reading_score',   'reading_band'],
+  ['Writing',   'writing_score',   'writing_band'],
+  ['Speaking',  'speaking_score',  'speaking_band']
+];
+
+function _pubNum(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return isNaN(n) ? null : n;
+}
+function _pubTestTitle(t) {
+  const hit = (typeof ALL_TESTS !== 'undefined') && ALL_TESTS.find(x => x.id === t.test_id);
+  if (hit && hit.title) return hit.title;
+  return t.test_title || t.test_id;
+}
+
+function publishedDetail(result, tests) {
+  if (!tests.length) {
+    return '<div class="pub-empty">No mock tests recorded for this student.</div>';
+  }
+
+  // per-skill mock averages
+  let skillsHtml = '';
+  _PUB_SKILLS.forEach(([label, mockKey, offKey]) => {
+    const vals = tests.map(t => _pubNum(t[mockKey])).filter(v => v !== null);
+    const off  = _pubNum(result[offKey]);
+    if (!vals.length && off === null) return;
+    const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    const d   = (avg !== null && off !== null) ? off - avg : null;
+    skillsHtml += '<div class="ps">' +
+      '<div class="ps-k">' + label + '</div>' +
+      '<div class="ps-v"><span class="ps-mock">' + (avg !== null ? avg.toFixed(1) : '&mdash;') + '</span>' +
+        '<i>&rarr;</i>' +
+        '<span class="ps-real">' + (off !== null ? off.toFixed(1) : '&mdash;') + '</span></div>' +
+      '<div class="ps-d ' + (d === null ? '' : (d >= 0 ? 'up' : 'down')) + '">' +
+        (d === null ? '' : (d >= 0 ? '+' : '') + d.toFixed(1)) + '</div>' +
+      '<div class="ps-s">' + (vals.length ? 'avg of ' + vals.length + ' test' + (vals.length > 1 ? 's' : '') : 'not tested') + '</div>' +
+    '</div>';
+  });
+
+  let rowsHtml = '';
+  tests.forEach(t => {
+    const c = k => { const v = _pubNum(t[k]); return v === null ? '&mdash;' : v.toFixed(1); };
+    rowsHtml += '<div class="pt-row">' +
+      '<span class="pt-n">' + escapeHtmlSafe(_pubTestTitle(t)) + '</span>' +
+      '<span class="pt-d">' + (t.submitted_at ? new Date(t.submitted_at).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'}) : '') + '</span>' +
+      '<span>' + c('listening_score') + '</span>' +
+      '<span>' + c('reading_score') + '</span>' +
+      '<span>' + c('writing_score') + '</span>' +
+      '<span class="pt-o">' + c('overall_band') + '</span>' +
+    '</div>';
+  });
+
+  return '<div class="pub-detail-in">' +
+    (skillsHtml ? '<div class="pub-sub">Mock average vs official, by skill</div><div class="ps-grid">' + skillsHtml + '</div>' : '') +
+    '<div class="pub-sub">Every test taken (' + tests.length + ')</div>' +
+    '<div class="pt-head"><span>Test</span><span>Date</span><span>L</span><span>R</span><span>W</span><span>Overall</span></div>' +
+    rowsHtml +
+  '</div>';
+}
+
+function togglePublished(rowEl) {
+  const item = rowEl.parentNode;
+  const open = item.classList.toggle('open');
+  rowEl.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
 function _cmpBand(v) { return (v === null || v === undefined || v === '') ? null : Number(v); }
 
 async function renderCompare() {
@@ -5263,11 +5376,12 @@ async function renderCompare() {
   try {
     const me = session && session.id;
     // Own mocks, own official result, and the two anonymised cohort views.
-    const [mineRaw, officialRaw, published, summary] = await Promise.all([
+    const [mineRaw, officialRaw, published, summary, allTests] = await Promise.all([
       me ? dbGet('attempts', `user_id=eq.${me}&overall_band=not.is.null&status=in.(submitted,graded)&order=submitted_at.desc&limit=3&select=id,test_id,overall_band,submitted_at`) : [],
       me ? dbGet('official_results', `user_id=eq.${me}&published=eq.true&order=test_date.desc&limit=1&select=test_date,overall_band,listening_band,reading_band,writing_band,speaking_band`) : [],
       dbGet('v_published_results', 'select=*').catch(() => []),
-      dbGet('v_published_summary', 'select=*').catch(() => [])
+      dbGet('v_published_summary', 'select=*').catch(() => []),
+      dbGet('v_published_result_tests', 'select=*&order=submitted_at.desc').catch(() => [])
     ]);
 
     const mine = mineRaw || [];
@@ -5275,6 +5389,9 @@ async function renderCompare() {
     const mockAvg = mine.length
       ? mine.reduce((s, a) => s + Number(a.overall_band), 0) / mine.length
       : null;
+
+    const testsBy = {};
+    (allTests || []).forEach(t => { (testsBy[t.official_id] = testsBy[t.official_id] || []).push(t); });
 
     let html = '';
 
@@ -5346,13 +5463,18 @@ async function renderCompare() {
         const mock = r.mock_avg === null || r.mock_avg === undefined ? null : Number(r.mock_avg);
         const d    = r.delta === null || r.delta === undefined ? null : Number(r.delta);
         const isMe = session && r.student_name && session.full_name && r.student_name === session.full_name;
-        html += '<div class="pub-row' + (isMe ? ' me' : '') + '">' +
-          '<span class="pub-n">' + escapeHtmlSafe(r.student_name) + (isMe ? ' <i>you</i>' : '') + '</span>' +
-          '<span class="pub-m">' + (mock !== null ? mock.toFixed(1) : '&mdash;') + '</span>' +
-          '<span class="pub-o">' + Number(r.overall_band).toFixed(1) + '</span>' +
-          '<span class="pub-d ' + (d === null ? '' : (d >= 0 ? 'up' : 'down')) + '">' +
-            (d === null ? '&mdash;' : (d >= 0 ? '+' : '') + d.toFixed(1)) + '</span>' +
-          '<span class="pub-t">' + new Date(r.test_date).toLocaleDateString('en-GB', {month:'short', year:'numeric'}) + '</span>' +
+        const mine = (testsBy[r.id] || []);
+        html += '<div class="pub-item">' +
+          '<div class="pub-row' + (isMe ? ' me' : '') + '" role="button" tabindex="0" aria-expanded="false"' +
+              ' onclick="togglePublished(this)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();togglePublished(this);}">' +
+            '<span class="pub-n"><i class="pub-caret">&#9656;</i>' + escapeHtmlSafe(r.student_name) + (isMe ? ' <b class="pub-you">you</b>' : '') + '</span>' +
+            '<span class="pub-m">' + (mock !== null ? mock.toFixed(1) : '&mdash;') + '</span>' +
+            '<span class="pub-o">' + Number(r.overall_band).toFixed(1) + '</span>' +
+            '<span class="pub-d ' + (d === null ? '' : (d >= 0 ? 'up' : 'down')) + '">' +
+              (d === null ? '&mdash;' : (d >= 0 ? '+' : '') + d.toFixed(1)) + '</span>' +
+            '<span class="pub-t">' + new Date(r.test_date).toLocaleDateString('en-GB', {month:'short', year:'numeric'}) + '</span>' +
+          '</div>' +
+          '<div class="pub-detail">' + publishedDetail(r, mine) + '</div>' +
         '</div>';
       });
       html += '</div>';
