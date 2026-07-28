@@ -595,6 +595,59 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--g6);colo
 .dash-filter-tabs{display:flex;gap:2px;background:var(--g6);border-radius:10px;padding:3px;}
 .dash-ftab{padding:5px 14px;border-radius:8px;font-size:12px;font-weight:600;
   color:var(--g4);cursor:pointer;transition:all .15s;user-select:none;white-space:nowrap;}
+/* ── Mock vs Real ── */
+.cmp-card{background:var(--white);border:1px solid var(--g5);border-radius:14px;padding:16px 18px;margin-bottom:14px;}
+.cmp-card-t{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--g3);margin-bottom:12px;}
+.cmp-hero{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:var(--white);
+  border:1px solid var(--g5);border-radius:14px;padding:20px 22px;margin-bottom:14px;}
+.cmp-stat{min-width:120px;}
+.cmp-stat-k{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--g4);}
+.cmp-stat-v{font-family:'DM Serif Display',serif;font-size:38px;line-height:1.1;color:var(--g1);margin:2px 0;}
+.cmp-stat-s{font-size:11px;color:var(--g4);}
+.cmp-stat-real .cmp-stat-v{color:var(--blue);}
+.cmp-stat-empty .cmp-stat-v{color:var(--g4);}
+.cmp-arrow{font-size:22px;color:var(--g4);}
+.cmp-delta{margin-left:auto;font-family:'DM Serif Display',serif;font-size:26px;display:flex;
+  flex-direction:column;align-items:flex-end;line-height:1.1;}
+.cmp-delta span{font-family:'DM Sans',sans-serif;font-size:10px;font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--g4);}
+.cmp-delta.up{color:var(--green);} .cmp-delta.down{color:var(--orange);}
+.cmp-rows{display:flex;flex-direction:column;gap:2px;}
+.cmp-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--g6);font-size:13px;}
+.cmp-row:last-child{border-bottom:none;}
+.cmp-row-n{flex:1;color:var(--g1);}
+.cmp-row-d{font-size:11px;color:var(--g4);white-space:nowrap;}
+.cmp-row-b{font-weight:700;color:var(--g1);min-width:30px;text-align:right;}
+.cmp-skills{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px;}
+.cmp-skill{background:var(--g6);border-radius:10px;padding:10px 12px;text-align:center;}
+.cmp-skill-k{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--g4);}
+.cmp-skill-v{font-family:'DM Serif Display',serif;font-size:22px;color:var(--g1);}
+.cmp-sum{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+.cmp-sum-i{flex:1;min-width:130px;background:var(--white);border:1px solid var(--g5);border-radius:14px;padding:14px 16px;}
+.cmp-sum-i b{display:block;font-family:'DM Serif Display',serif;font-size:26px;font-weight:400;color:var(--blue);}
+.cmp-sum-i span{font-size:11px;color:var(--g3);}
+.cmp-chart{display:flex;flex-direction:column;gap:10px;}
+.cmp-bar{display:flex;align-items:center;gap:10px;}
+.cmp-bar-k{font-size:12px;font-weight:700;color:var(--g2);min-width:26px;}
+.cmp-bar-track{flex:1;display:flex;flex-direction:column;gap:3px;}
+.cmp-bar-f{height:16px;border-radius:0 5px 5px 0;display:flex;align-items:center;justify-content:flex-end;
+  padding-right:6px;min-width:34px;transition:width .4s ease;}
+.cmp-bar-f span{font-size:10px;font-weight:700;color:#fff;}
+.cmp-bar-f.mock{background:var(--g4);}
+.cmp-bar-f.real{background:var(--blue);}
+.cmp-bar-n{font-size:10px;color:var(--g4);min-width:28px;text-align:right;}
+.cmp-bar.mine .cmp-bar-k{color:var(--blue);}
+.cmp-bar.mine{background:var(--blu-lt);border-radius:9px;padding:5px 6px;margin:-5px -6px;}
+.cmp-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:11px;color:var(--g3);}
+.cmp-legend .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
+.cmp-legend .sw.mock{background:var(--g4);} .cmp-legend .sw.real{background:var(--blue);}
+.cmp-legend .sw.mine{background:var(--blu-lt);border:1px solid var(--blue);}
+.cmp-note{font-size:11px;line-height:1.6;color:var(--g4);padding:0 2px;}
+.of-l{display:block;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--g4);margin-bottom:4px;}
+.of-i{width:100%;font-family:'DM Sans',sans-serif;font-size:13px;color:var(--g1);background:var(--white);
+  border:1.5px solid var(--g5);border-radius:9px;padding:7px 10px;outline:none;}
+.of-i:focus{border-color:var(--blue);}
 .dash-ftab:hover{color:var(--g2);}
 .dash-ftab.active{background:var(--white);color:var(--g1);box-shadow:0 1px 4px rgba(0,0,0,.08);}
 .qtype-filter{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 14px;}
@@ -724,6 +777,7 @@ select.editor-input{cursor:pointer;}
       <div class="dash-ftab active" data-view="tests" onclick="setDashView('tests')">Tests</div>
       <div class="dash-ftab" data-view="results" onclick="setDashView('results')">My Results</div>
       <div class="dash-ftab" data-view="scoreboard" onclick="setDashView('scoreboard')">🏆 Scoreboard</div>
+      <div class="dash-ftab" data-view="compare" onclick="setDashView('compare')">🎯 Mock vs Real</div>
     </div>
     <a id="top-admin-link" href="#/admin" style="text-decoration:none;display:none;">
       <button class="btn btn-ghost btn-sm">Admin</button>
@@ -772,6 +826,12 @@ select.editor-input{cursor:pointer;}
     <div id="dash-tests-view">
       <div id="available-tests-grid">
         <div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">Loading tests…</div></div>
+      </div>
+    </div>
+    <!-- Mock vs Real view -->
+    <div id="dash-compare-view" style="display:none;">
+      <div id="compare-content">
+        <div class="empty-state"><div class="empty-state-icon">⏳</div><div class="empty-state-text">Loading…</div></div>
       </div>
     </div>
     <!-- My Results view -->
@@ -903,6 +963,7 @@ select.editor-input{cursor:pointer;}
       <div class="admin-tab active" data-tab="tests" onclick="switchAdminTab('tests')">Tests</div>
       <div class="admin-tab" data-tab="students" onclick="switchAdminTab('students')">Students</div>
       <div class="admin-tab" data-tab="results" onclick="switchAdminTab('results')">Results</div>
+      <div class="admin-tab" data-tab="official" onclick="switchAdminTab('official')">Official Scores</div>
     </div>
     <!-- Tests panel -->
     <div class="admin-panel active" id="admin-tests">
@@ -929,6 +990,42 @@ select.editor-input{cursor:pointer;}
         <table class="admin-table">
           <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Created</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody id="admin-students-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <!-- Official (real IELTS) scores panel -->
+    <div class="admin-panel" id="admin-official">
+      <div class="section-header">
+        <div class="section-title-row">Official IELTS scores</div>
+      </div>
+      <div class="admin-card" style="margin-bottom:16px;">
+        <div style="font-size:12px;color:var(--g3);line-height:1.6;margin-bottom:14px;">
+          Record a <b>verified</b> official result (from the candidate's TRF). These feed the students'
+          <b>Mock vs Real</b> page, but only in anonymised, aggregated form &mdash; and only when the
+          student has agreed to share.
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:end;">
+          <div><label class="of-l">Student</label><select id="of-student" class="of-i"></select></div>
+          <div><label class="of-l">Test date</label><input id="of-date" type="date" class="of-i"></div>
+          <div><label class="of-l">Overall</label><input id="of-overall" type="number" step="0.5" min="0" max="9" class="of-i" placeholder="7.0"></div>
+          <div><label class="of-l">Listening</label><input id="of-l" type="number" step="0.5" min="0" max="9" class="of-i"></div>
+          <div><label class="of-l">Reading</label><input id="of-r" type="number" step="0.5" min="0" max="9" class="of-i"></div>
+          <div><label class="of-l">Writing</label><input id="of-w" type="number" step="0.5" min="0" max="9" class="of-i"></div>
+          <div><label class="of-l">Speaking</label><input id="of-s" type="number" step="0.5" min="0" max="9" class="of-i"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:14px;">
+          <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--g2);cursor:pointer;">
+            <input id="of-consent" type="checkbox" style="width:15px;height:15px;cursor:pointer;">
+            Student agreed to share this anonymously
+          </label>
+          <button class="btn btn-primary btn-sm" onclick="saveOfficialResult()">Save result</button>
+          <span id="of-msg" style="font-size:12px;"></span>
+        </div>
+      </div>
+      <div class="admin-card">
+        <table class="admin-table">
+          <thead><tr><th>Student</th><th>Test date</th><th>Overall</th><th>L / R / W / S</th><th>Shared</th><th></th></tr></thead>
+          <tbody id="admin-official-tbody"></tbody>
         </table>
       </div>
     </div>
@@ -4931,7 +5028,7 @@ function onSearchInput(val) {
 let adminSearchQuery = '';
 
 function setDashView(view) {
-  ['tests','results','scoreboard'].forEach(v => {
+  ['tests','results','scoreboard','compare'].forEach(v => {
     const el = document.getElementById('dash-' + v + '-view');
     if (el) el.style.display = v === view ? '' : 'none';
   });
@@ -4940,6 +5037,7 @@ function setDashView(view) {
   document.querySelectorAll('#dash-view-tabs .dash-ftab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
   if (view === 'results') { renderMyResults(); renderProgressChart(); }
   if (view === 'scoreboard') { renderScoreboard(); }
+  if (view === 'compare') { renderCompare(); }
 
 }
 
@@ -5130,6 +5228,137 @@ async function renderWritingTests() {
 /* ── SCOREBOARD ── */
 let _sbPeriod = 'month'; // 'month' or 'alltime'
 let _sbType   = 'full';  // 'full', 'listening', 'reading'
+
+/* ── Mock vs Real ────────────────────────────────────────────────────────────
+   Two things on one page: the student's own last-3 mock average against their own
+   official band, and how the cohort's mocks have tracked the real exam.
+
+   The cohort half reads v_mock_vs_official / v_mock_vs_official_summary rather
+   than the raw table. Those views only surface a bucket once at least three
+   students sit in it (and a headline once there are five results), because with a
+   roll of this size a bucket of one is a named person. Consent is required as
+   well — official_results.share_consent gates entry into the views at all. */
+function _cmpBand(v) { return (v === null || v === undefined || v === '') ? null : Number(v); }
+
+async function renderCompare() {
+  const el = document.getElementById('compare-content');
+  if (!el) return;
+  el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⏳</div><div class="empty-state-text">Loading…</div></div>';
+
+  try {
+    const me = session && session.id;
+    // Own mocks, own official result, and the two anonymised cohort views.
+    const [mineRaw, officialRaw, buckets, summary] = await Promise.all([
+      me ? dbGet('attempts', `user_id=eq.${me}&overall_band=not.is.null&status=in.(submitted,graded)&order=submitted_at.desc&limit=3&select=id,test_id,overall_band,submitted_at`) : [],
+      me ? dbGet('official_results', `user_id=eq.${me}&order=test_date.desc&limit=1&select=test_date,overall_band,listening_band,reading_band,writing_band,speaking_band`) : [],
+      dbGet('v_mock_vs_official', 'select=*').catch(() => []),
+      dbGet('v_mock_vs_official_summary', 'select=*').catch(() => [])
+    ]);
+
+    const mine = mineRaw || [];
+    const official = (officialRaw || [])[0] || null;
+    const mockAvg = mine.length
+      ? mine.reduce((s, a) => s + Number(a.overall_band), 0) / mine.length
+      : null;
+
+    let html = '';
+
+    /* ── your own comparison ── */
+    html += '<div class="dash-section"><div class="dash-section-title">Your mocks vs the real test</div>';
+    if (!mine.length) {
+      html += '<div class="cmp-card"><div class="empty-state"><div class="empty-state-icon">📊</div>' +
+        '<div class="empty-state-text">Complete a full mock test to see how you are tracking.</div></div></div>';
+    } else {
+      const delta = official ? Number(official.overall_band) - mockAvg : null;
+      html += '<div class="cmp-hero">' +
+        '<div class="cmp-stat"><div class="cmp-stat-k">Last ' + mine.length + ' mock' + (mine.length > 1 ? 's' : '') + '</div>' +
+          '<div class="cmp-stat-v">' + mockAvg.toFixed(1) + '</div>' +
+          '<div class="cmp-stat-s">average band</div></div>' +
+        '<div class="cmp-arrow">' + (official ? '&rarr;' : '') + '</div>' +
+        '<div class="cmp-stat' + (official ? ' cmp-stat-real' : ' cmp-stat-empty') + '">' +
+          '<div class="cmp-stat-k">Official test</div>' +
+          '<div class="cmp-stat-v">' + (official ? Number(official.overall_band).toFixed(1) : '&mdash;') + '</div>' +
+          '<div class="cmp-stat-s">' + (official ? new Date(official.test_date).toLocaleDateString('en-GB', {month:'short', year:'numeric'}) : 'not recorded yet') + '</div></div>' +
+        (delta !== null
+          ? '<div class="cmp-delta ' + (delta >= 0 ? 'up' : 'down') + '">' + (delta >= 0 ? '+' : '') + delta.toFixed(1) + '<span>vs mocks</span></div>'
+          : '') +
+      '</div>';
+
+      html += '<div class="cmp-card"><div class="cmp-card-t">The mocks behind that average</div><div class="cmp-rows">';
+      mine.forEach(a => {
+        const t = (typeof ALL_TESTS !== 'undefined' && ALL_TESTS.find(x => x.id === a.test_id));
+        html += '<div class="cmp-row"><span class="cmp-row-n">' + escapeHtmlSafe(t ? t.title : a.test_id) + '</span>' +
+          '<span class="cmp-row-d">' + (a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'}) : '') + '</span>' +
+          '<span class="cmp-row-b">' + Number(a.overall_band).toFixed(1) + '</span></div>';
+      });
+      html += '</div></div>';
+
+      if (official) {
+        const skills = [['Listening','listening_band'],['Reading','reading_band'],['Writing','writing_band'],['Speaking','speaking_band']]
+          .filter(s => _cmpBand(official[s[1]]) !== null);
+        if (skills.length) {
+          html += '<div class="cmp-card"><div class="cmp-card-t">Official result by skill</div><div class="cmp-skills">' +
+            skills.map(s => '<div class="cmp-skill"><div class="cmp-skill-k">' + s[0] + '</div>' +
+              '<div class="cmp-skill-v">' + Number(official[s[1]]).toFixed(1) + '</div></div>').join('') +
+            '</div></div>';
+        }
+      }
+    }
+    html += '</div>';
+
+    /* ── cohort calibration ── */
+    html += '<div class="dash-section"><div class="dash-section-title">How Sevenine mocks compare to the real exam</div>';
+    const sum = (summary || [])[0] || null;
+    const rows = buckets || [];
+
+    if (!sum && !rows.length) {
+      html += '<div class="cmp-card"><div class="empty-state"><div class="empty-state-icon">🎯</div>' +
+        '<div class="empty-state-text">Not enough official results yet.<br>' +
+        'Once enough students have shared a verified official score, this will show how mock bands have translated into real ones.</div></div></div>';
+    } else {
+      if (sum) {
+        html += '<div class="cmp-sum">' +
+          '<div class="cmp-sum-i"><b>' + sum.n + '</b><span>students compared</span></div>' +
+          '<div class="cmp-sum-i"><b>' + (Number(sum.avg_delta) >= 0 ? '+' : '') + Number(sum.avg_delta).toFixed(1) + '</b><span>average difference</span></div>' +
+          '<div class="cmp-sum-i"><b>' + Math.round(sum.pct_met_or_beat) + '%</b><span>matched or beat their mocks</span></div>' +
+        '</div>';
+      }
+      if (rows.length) {
+        const maxN = Math.max.apply(null, rows.map(r => r.n));
+        html += '<div class="cmp-card"><div class="cmp-card-t">Average official band, by mock average</div><div class="cmp-chart">';
+        rows.forEach(r => {
+          const mockV = Number(r.avg_mock_band), realV = Number(r.avg_official_band);
+          const isMine = mockAvg !== null && Math.floor(mockAvg * 2) / 2 === Number(r.mock_band_bucket);
+          html += '<div class="cmp-bar' + (isMine ? ' mine' : '') + '">' +
+            '<div class="cmp-bar-k">' + Number(r.mock_band_bucket).toFixed(1) + '</div>' +
+            '<div class="cmp-bar-track">' +
+              '<div class="cmp-bar-f mock" style="width:' + (mockV / 9 * 100).toFixed(1) + '%"><span>' + mockV.toFixed(1) + '</span></div>' +
+              '<div class="cmp-bar-f real" style="width:' + (realV / 9 * 100).toFixed(1) + '%"><span>' + realV.toFixed(1) + '</span></div>' +
+            '</div>' +
+            '<div class="cmp-bar-n">n=' + r.n + '</div>' +
+          '</div>';
+        });
+        html += '</div><div class="cmp-legend">' +
+          '<span><i class="sw mock"></i>mock average</span><span><i class="sw real"></i>official average</span>' +
+          (mockAvg !== null ? '<span><i class="sw mine"></i>your band range</span>' : '') +
+        '</div></div>';
+      }
+      html += '<div class="cmp-note">Figures are averages from students who agreed to share a verified official result. ' +
+        'A band range only appears once at least three students sit in it, so no individual can be identified. ' +
+        'Small samples move around a lot &mdash; treat this as a guide, not a prediction.</div>';
+    }
+    html += '</div>';
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-state-text">Could not load the comparison.</div></div>';
+    console.warn('renderCompare failed', e);
+  }
+}
+
+function escapeHtmlSafe(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
 async function renderScoreboard() {
   const el = document.getElementById('scoreboard-content');
@@ -8036,12 +8265,94 @@ async function showAdminView(tab) {
   switchAdminTab(tab);
 }
 
+/* ── Admin: official (real IELTS) scores ─────────────────────────────────────
+   Teacher-entered and expected to be verified against the candidate's TRF —
+   self-reported bands are not reliable enough to calibrate anything against.
+   share_consent gates whether the row ever reaches the students' comparison. */
+async function loadAdminOfficial() {
+  const sel = document.getElementById('of-student');
+  const tb  = document.getElementById('admin-official-tbody');
+  if (!sel || !tb) return;
+  try {
+    const [users, rows] = await Promise.all([
+      dbGet('users', 'select=id,full_name,username,role&order=full_name.asc'),
+      dbGet('official_results', 'select=*&order=test_date.desc')
+    ]);
+    const students = (users || []).filter(u => (u.role || 'student') === 'student');
+    const pool = students.length ? students : (users || []);
+    sel.innerHTML = '<option value="">Select student…</option>' + pool.map(u =>
+      '<option value="' + u.id + '">' + escapeHtmlSafe(u.full_name || u.username || u.id) + '</option>').join('');
+    const nameOf = Object.fromEntries((users || []).map(u => [u.id, u.full_name || u.username || u.id]));
+    const b = v => (v === null || v === undefined) ? '–' : Number(v).toFixed(1);
+    tb.innerHTML = (rows || []).length ? (rows || []).map(r =>
+      '<tr><td>' + escapeHtmlSafe(nameOf[r.user_id] || r.user_id) + '</td>' +
+      '<td>' + new Date(r.test_date).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'}) + '</td>' +
+      '<td><b>' + Number(r.overall_band).toFixed(1) + '</b></td>' +
+      '<td>' + [r.listening_band, r.reading_band, r.writing_band, r.speaking_band].map(b).join(' / ') + '</td>' +
+      '<td>' + (r.share_consent ? '<span style="color:var(--green);font-weight:600;">Yes</span>'
+                                : '<span style="color:var(--g4);">No</span>') + '</td>' +
+      '<td><button class="btn btn-ghost btn-sm" onclick="deleteOfficialResult(\'' + r.id + '\')">Delete</button></td></tr>'
+    ).join('') : '<tr><td colspan="6" style="color:var(--g4);font-size:12px;">No official results recorded yet.</td></tr>';
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="6" style="color:var(--red);font-size:12px;">Could not load: ' + escapeHtmlSafe(e.message) + '</td></tr>';
+  }
+}
+
+async function saveOfficialResult() {
+  const msg = document.getElementById('of-msg');
+  const num = id => {
+    const v = document.getElementById(id).value;
+    return v === '' ? null : Number(v);
+  };
+  const body = {
+    user_id: document.getElementById('of-student').value,
+    test_date: document.getElementById('of-date').value,
+    overall_band: num('of-overall'),
+    listening_band: num('of-l'),
+    reading_band: num('of-r'),
+    writing_band: num('of-w'),
+    speaking_band: num('of-s'),
+    share_consent: document.getElementById('of-consent').checked
+  };
+  function fail(t) { msg.style.color = 'var(--red)'; msg.textContent = t; }
+  if (!body.user_id)   return fail('Pick a student.');
+  if (!body.test_date) return fail('Pick the test date.');
+  if (body.overall_band === null) return fail('Overall band is required.');
+  const bands = ['overall_band','listening_band','reading_band','writing_band','speaking_band'];
+  for (const k of bands) {
+    const v = body[k];
+    if (v !== null && (isNaN(v) || v < 0 || v > 9 || Math.round(v * 2) !== v * 2)) {
+      return fail('Bands must be 0–9 in half steps.');
+    }
+  }
+  msg.style.color = 'var(--g3)'; msg.textContent = 'Saving…';
+  try {
+    await dbPost('official_results', body);
+    msg.style.color = 'var(--green)'; msg.textContent = 'Saved.';
+    ['of-overall','of-l','of-r','of-w','of-s','of-date'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('of-consent').checked = false;
+    document.getElementById('of-student').value = '';
+    loadAdminOfficial();
+    setTimeout(() => { msg.textContent = ''; }, 2500);
+  } catch (e) {
+    // the (user_id, test_date) unique index is the usual cause
+    fail(/duplicate|unique/i.test(e.message || '') ? 'That student already has a result for that date.' : ('Failed: ' + e.message));
+  }
+}
+
+async function deleteOfficialResult(id) {
+  if (!confirm('Delete this official result?')) return;
+  try { await db('DELETE', 'official_results', null, 'id=eq.' + id); loadAdminOfficial(); }
+  catch (e) { alert('Could not delete: ' + e.message); }
+}
+
 function switchAdminTab(tab) {
   document.querySelectorAll('.admin-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.querySelectorAll('.admin-panel').forEach(p => p.classList.toggle('active', p.id === 'admin-' + tab));
   if (tab === 'tests') loadAdminTests();
   if (tab === 'students') loadAdminStudents();
   if (tab === 'results') loadAdminResults();
+  if (tab === 'official') loadAdminOfficial();
 }
 
 async function loadAdminTests() {
