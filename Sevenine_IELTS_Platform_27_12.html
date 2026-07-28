@@ -4738,24 +4738,23 @@ function calcOverall(l, r, w) {
    it must never appear behind a test, where it would be a distraction. The rAF
    loop parks itself once the orbs settle, so an idle page costs nothing. */
 const _glow = (function () {
-  let layer, a, b, tx, ty, ax, ay, bx, by, raf = null, follow = false, ready = false;
+  let layer, a, b, tx, ty, raf = null, follow = false, ready = false;
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  // Both orbs sit exactly on the pointer — no easing, no trailing. The differing
+  // size and opacity still read as a bright core inside a soft halo.
   function place() {
-    a.style.transform = 'translate3d(' + ax.toFixed(1) + 'px,' + ay.toFixed(1) + 'px,0)';
-    b.style.transform = 'translate3d(' + bx.toFixed(1) + 'px,' + by.toFixed(1) + 'px,0)';
+    const t = 'translate3d(' + tx.toFixed(1) + 'px,' + ty.toFixed(1) + 'px,0)';
+    a.style.transform = t;
+    b.style.transform = t;
   }
-  function tick() {
-    ax += (tx - ax) * 0.045; ay += (ty - ay) * 0.045;   // large orb trails behind
-    bx += (tx - bx) * 0.12;  by += (ty - by) * 0.12;    // small orb leads
-    place();
-    const settled = Math.abs(tx-ax) + Math.abs(ty-ay) + Math.abs(tx-bx) + Math.abs(ty-by) < 0.6;
-    raf = settled ? null : requestAnimationFrame(tick);
-  }
+  // Written straight through rather than deferred to rAF: the browser already
+  // coalesces pointermove to one event per frame, and a transform-only change is
+  // composited without layout or paint, so this is the zero-lag option.
   function onMove(e) {
     if (!follow) return;
     tx = e.clientX; ty = e.clientY;
-    if (!raf) raf = requestAnimationFrame(tick);
+    place();
   }
   function stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } }
   function init() {
@@ -4763,8 +4762,8 @@ const _glow = (function () {
     if (!layer) return false;
     a = layer.querySelector('.orb-a'); b = layer.querySelector('.orb-b');
     if (!a || !b) return false;
-    tx = ax = bx = window.innerWidth / 2;
-    ty = ay = by = window.innerHeight * 0.30;
+    tx = window.innerWidth / 2;
+    ty = window.innerHeight * 0.30;
     place();
     window.addEventListener('pointermove', onMove, {passive: true});
     document.addEventListener('visibilitychange', function () { if (document.hidden) stop(); });
