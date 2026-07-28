@@ -6819,19 +6819,28 @@ function buildWritingSection() {
       '</div>' +
     '</div>';
 
+  // Task-2-only tests render NO #writing-area-t1 textarea (hasTask1 is false, and for
+  // those tests writing_data.task1 is literally null). Every lookup below must therefore
+  // be null-checked: an unguarded getElementById(...).addEventListener threw here, which
+  // (a) aborted buildWritingSection before openTestSection reached startTimer, so the
+  // timer never started and sat at '--:--', and (b) skipped the task-2 listener below,
+  // so nothing ever copied the textarea into writingAnswers.task2 and the essay was lost.
+  const _areaT1 = document.getElementById('writing-area-t1');
+  const _areaT2 = document.getElementById('writing-area-t2');
+
   // Restore saved writing
-  if (writingAnswers.task1) document.getElementById('writing-area-t1').value = writingAnswers.task1;
-  if (writingAnswers.task2) document.getElementById('writing-area-t2').value = writingAnswers.task2;
+  if (_areaT1 && writingAnswers.task1) _areaT1.value = writingAnswers.task1;
+  if (_areaT2 && writingAnswers.task2) _areaT2.value = writingAnswers.task2;
 
   switchWritingTask(hasTask1 ? 't1' : 't2');
 
-  document.getElementById('writing-area-t1').addEventListener('input', () => {
-    writingAnswers.task1 = document.getElementById('writing-area-t1').value;
+  if (_areaT1) _areaT1.addEventListener('input', () => {
+    writingAnswers.task1 = _areaT1.value;
     updateWritingWordCount('t1');
     saveAnswersSilent();
   });
-  document.getElementById('writing-area-t2').addEventListener('input', () => {
-    writingAnswers.task2 = document.getElementById('writing-area-t2').value;
+  if (_areaT2) _areaT2.addEventListener('input', () => {
+    writingAnswers.task2 = _areaT2.value;
     updateWritingWordCount('t2');
     saveAnswersSilent();
   });
