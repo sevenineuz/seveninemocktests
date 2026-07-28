@@ -7380,10 +7380,12 @@ function continueToNext(next) {
 }
 
 async function submitTest() {
-  // Score L and R if not already scored
-  const lScore = currentAttempt.listening_score ? {band: currentAttempt.listening_score, raw: currentAttempt.listening_raw||0, results: currentAttempt.listening_results||{}} : autoScoreListening();
-  const rScore = currentAttempt.reading_score ? {band: currentAttempt.reading_score, raw: currentAttempt.reading_raw||0, results: currentAttempt.reading_results||{}} : autoScoreReading();
   try {
+    // Score L and R if not already scored. These MUST stay inside the try: anything that
+    // throws out here has no catch, so the student sees no error and no redirect — the page
+    // just freezes with the attempt still 'in_progress' and invisible to the grading queue.
+    const lScore = currentAttempt.listening_score ? {band: currentAttempt.listening_score, raw: currentAttempt.listening_raw||0, results: currentAttempt.listening_results||{}} : autoScoreListening();
+    const rScore = currentAttempt.reading_score ? {band: currentAttempt.reading_score, raw: currentAttempt.reading_raw||0, results: currentAttempt.reading_results||{}} : autoScoreReading();
     const patchData = {
       status: 'submitted',
       submitted_at: new Date().toISOString(),
@@ -7463,7 +7465,10 @@ function answerMatches(student, key) {
 }
 
 function autoScoreListening() {
-  const key = currentTest.listening_data.answer_key || {};
+  // Writing-only tests (task1_only/task2_only/writing_full) carry no listening_data at
+  // all, so this must not assume the section exists — an unguarded read threw a TypeError
+  // out of submitTest() before its try block and froze submission.
+  const key = (currentTest.listening_data && currentTest.listening_data.answer_key) || {};
   if (!Object.keys(key).length) return {band: null, raw: 0, results: {}};
   let correct = 0;
   const results = {};
@@ -7500,7 +7505,8 @@ function autoScoreListening() {
 }
 
 function autoScoreReading() {
-  const key = currentTest.reading_data.answer_key || {};
+  // Same guard as autoScoreListening — writing-only tests have no reading_data.
+  const key = (currentTest.reading_data && currentTest.reading_data.answer_key) || {};
   const keyLen = Object.keys(key).length;
   if (!keyLen) return {band: null, raw: 0, results: {}};
   let correct = 0;
