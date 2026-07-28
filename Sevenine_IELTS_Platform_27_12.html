@@ -685,6 +685,8 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--g6);colo
 .pt-d{font-size:11px;color:var(--g4);}
 .pt-o{font-weight:700;color:var(--g1);}
 .pub-empty{font-size:12px;color:var(--g4);padding:10px 2px 16px;}
+.pt-skip{font-size:10px;color:var(--g4);font-style:italic;}
+.pt-note{font-size:10px;color:var(--g4);line-height:1.5;margin-top:9px;}
 @media (max-width:560px){
   .pt-head,.pt-row{grid-template-columns:1fr 32px 32px 32px 32px 46px;}
   .pt-head span:nth-child(2),.pt-row span:nth-child(2){display:none;}
@@ -5298,10 +5300,10 @@ let _sbType   = 'full';  // 'full', 'listening', 'reading'
    attempts where that skill was scored — mini tests only carry one skill, so each
    is averaged independently rather than assuming every test has all four. */
 const _PUB_SKILLS = [
-  ['Listening', 'listening_score', 'listening_band'],
-  ['Reading',   'reading_score',   'reading_band'],
-  ['Writing',   'writing_score',   'writing_band'],
-  ['Speaking',  'speaking_score',  'speaking_band']
+  ['Listening', 'listening_score', 'listening_band', 'listening_sat'],
+  ['Reading',   'reading_score',   'reading_band',   'reading_sat'],
+  ['Writing',   'writing_score',   'writing_band',   null],
+  ['Speaking',  'speaking_score',  'speaking_band',  null]
 ];
 
 function _pubNum(v) {
@@ -5325,8 +5327,11 @@ function publishedDetail(result, tests) {
 
   // per-skill mock averages
   let skillsHtml = '';
-  _PUB_SKILLS.forEach(([label, mockKey, offKey]) => {
-    const vals = bandTests.map(t => _pubNum(t[mockKey])).filter(v => v !== null);
+  _PUB_SKILLS.forEach(([label, mockKey, offKey, satKey]) => {
+    // A section the student walked out of is not a score — exclude it from the
+    // average rather than letting a near-blank paper drag the skill down.
+    const usable = satKey ? bandTests.filter(t => t[satKey]) : bandTests;
+    const vals = usable.map(t => _pubNum(t[mockKey])).filter(v => v !== null);
     const off  = _pubNum(result[offKey]);
     if (!vals.length && off === null) return;
     const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
@@ -5338,7 +5343,7 @@ function publishedDetail(result, tests) {
         '<span class="ps-real">' + (off !== null ? off.toFixed(1) : '&mdash;') + '</span></div>' +
       '<div class="ps-d ' + (d === null ? '' : (d >= 0 ? 'up' : 'down')) + '">' +
         (d === null ? '' : (d >= 0 ? '+' : '') + d.toFixed(1)) + '</div>' +
-      '<div class="ps-s">' + (vals.length ? 'avg of ' + vals.length + ' test' + (vals.length > 1 ? 's' : '') : 'not tested') + '</div>' +
+      '<div class="ps-s">' + (vals.length ? 'avg of ' + vals.length + ' test' + (vals.length > 1 ? 's' : '') : 'not completed') + '</div>' +
     '</div>';
   });
 
@@ -5354,6 +5359,9 @@ function publishedDetail(result, tests) {
         return (t.reading_raw !== null && t.reading_total) ? (t.reading_raw + '/' + t.reading_total) : '&mdash;';
       }
       if (mk && k === 'overall_band') return '&mdash;';
+      if (!mk && k === 'listening_score' && t.listening_sat === false) return '<span class="pt-skip">n/s</span>';
+      if (!mk && k === 'reading_score'   && t.reading_sat   === false) return '<span class="pt-skip">n/s</span>';
+      if (!mk && k === 'overall_band' && (t.listening_sat === false || t.reading_sat === false)) return '<span class="pt-skip">n/s</span>';
       const v = _pubNum(t[k]);
       return v === null ? '&mdash;' : v.toFixed(1);
     };
@@ -5373,6 +5381,9 @@ function publishedDetail(result, tests) {
     '<div class="pub-sub">Every test taken (' + tests.length + ')</div>' +
     '<div class="pt-head"><span>Test</span><span>Date</span><span>L</span><span>R</span><span>W</span><span>S</span><span>Overall</span></div>' +
     rowsHtml +
+    (tests.some(t => t.listening_sat === false || t.reading_sat === false)
+      ? '<div class="pt-note"><b>n/s</b> = not sat &mdash; fewer than half the questions were answered, so that section is left out of the averages above.</div>'
+      : '') +
   '</div>';
 }
 
