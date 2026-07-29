@@ -430,7 +430,11 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--g6);colo
 .admin-panel.active{display:block;}
 .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
 .section-title-row{font-family:'DM Serif Display',serif;font-size:18px;color:var(--g1);}
-.admin-card{background:var(--white);border-radius:14px;overflow:hidden;
+.admin-card{background:var(--white);border-radius:14px;
+  /* The results table cannot compress below ~930px (8 columns + 4 action buttons).
+     overflow:hidden silently clipped the last button on narrower screens; scroll
+     the card instead so every action stays reachable. */
+  overflow-x:auto;
   box-shadow:0 1px 3px rgba(0,0,0,.06);}
 .admin-table{width:100%;border-collapse:collapse;}
 .admin-table th{background:var(--g6);padding:10px 16px;text-align:left;
@@ -449,7 +453,8 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--g6);colo
 .skill-chip.sc-filled .sc-lbl{opacity:.9;}
 .skill-chip.sc-filled .sc-val{font-size:13px;}
 .skill-chip.sc-pending{color:var(--g4);background:var(--g6);border-color:var(--g5);}
-.table-actions{display:flex;gap:6px;}
+.table-actions{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;}
+.table-actions .btn{white-space:nowrap;padding:4px 9px;font-size:11px;}
 .role-badge{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
   padding:2px 8px;border-radius:9px;}
 .role-owner{background:rgba(175,82,222,.1);color:var(--purple);}
