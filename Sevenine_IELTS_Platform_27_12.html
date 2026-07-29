@@ -1111,6 +1111,8 @@ select.editor-input{cursor:pointer;}
             <option value="reading_only">Mini reading</option>
             <option value="writing">Writing</option>
           </select>
+          <button class="btn btn-ghost btn-sm" onclick="adminExportVisibleResults()" title="Download an image for every result listed below">&#8595; Export all shown</button>
+          <span id="admin-export-msg" style="font-size:11px;color:var(--g3);"></span>
         </div>
       </div>
       <div class="admin-card">
@@ -8809,6 +8811,7 @@ async function loadAdminResults() {
         ${canGradeW ? `<button class="btn btn-primary btn-sm" onclick="window.location.hash='#/admin/grade/${a.id}'">Grade W</button>` : ''}
         ${canGradeSp ? `<button class="btn btn-ghost btn-sm" data-spid="${a.id}" data-spname="${userMap[a.user_id]||'Student'}" onclick="openSpeakingGrade(this.dataset.spid,this.dataset.spname)">Grade Sp</button>` : (a.speaking_score ? `<span style="font-size:11px;font-weight:700;color:var(--green);">Sp:${a.speaking_score}</span>` : '')}
         <button class="btn btn-ghost btn-sm" onclick="viewResults('${a.id}')">View</button>
+        <button class="btn btn-ghost btn-sm" data-aid="${a.id}" data-name="${(userMap[a.user_id]||'Student').replace(/"/g,'&quot;')}" onclick="adminExportResult(this)" title="Download a branded result image">&#8595; Image</button>
       </div>`;
 
       return `<tr>
@@ -10026,11 +10029,42 @@ function showEditorView() {
 /* ════════════════════════════════════════════
    DOWNLOAD RESULT CARD
    ════════════════════════════════════════════ */
-async function downloadResultCard(btn) {
-  const attemptId = btn.dataset.aid;
-  const studentName = btn.dataset.name || (session ? session.full_name : 'Student');
+/* Admin export. Same card as the student's Share button, so a result the school
+   sends out looks identical to one a student shares themselves. */
+async function adminExportResult(btn) {
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Rendering…';
+  try { await exportResultImage(btn.dataset.aid, btn.dataset.name); }
+  finally { btn.disabled = false; btn.textContent = old; }
+}
+
+// Export every row currently shown in the admin results table, one image each.
+async function adminExportVisibleResults() {
+  const btns = Array.from(document.querySelectorAll('#admin-results-tbody button[onclick^="adminExportResult"]'));
+  if (!btns.length) { alert('No results to export.'); return; }
+  if (!confirm('Download ' + btns.length + ' result image' + (btns.length > 1 ? 's' : '') + '?')) return;
+  const bar = document.getElementById('admin-export-msg');
+  for (let i = 0; i < btns.length; i++) {
+    if (bar) bar.textContent = 'Exporting ' + (i + 1) + ' of ' + btns.length + '…';
+    try { await exportResultImage(btns[i].dataset.aid, btns[i].dataset.name); } catch (e) { /* skip and continue */ }
+    // browsers throttle rapid programmatic downloads; give each one room to land
+    await new Promise(r => setTimeout(r, 450));
+  }
+  if (bar) { bar.textContent = 'Done — ' + btns.length + ' image' + (btns.length > 1 ? 's' : '') + ' downloaded.';
+             setTimeout(() => { bar.textContent = ''; }, 4000); }
+}
+
+/* Result card image. Used by the student "Share" button and by the admin export;
+   both render the same 1080x1920 branded card so a result looks identical wherever
+   it came from. Mini papers show raw correct/total, never a 0-9 band. */
+function downloadResultCard(btn) {
+  return exportResultImage(btn.dataset.aid, btn.dataset.name || (session ? session.full_name : 'Student'));
+}
+
+async function exportResultImage(attemptId, studentName) {
+  studentName = studentName || 'Student';
   try {
-    const r = await dbGet('attempts', `id=eq.${attemptId}&select=id,test_id,listening_score,reading_score,writing_task1_score,writing_task2_score,overall_band,status,submitted_at,speaking_score`);
+    const r = await dbGet('attempts', `id=eq.${attemptId}&select=id,test_id,listening_score,reading_score,writing_task1_score,writing_task2_score,overall_band,status,submitted_at,speaking_score,listening_results,reading_results,listening_raw,reading_raw`);
     if (!r || !r.length) { alert('Could not load result data.'); return; }
     const a = r[0];
     const test = ALL_TESTS.find(t => t.id === a.test_id) || {title: 'IELTS Mock Test'};
@@ -10039,6 +10073,10 @@ async function downloadResultCard(btn) {
     const isReadingOnly   = testType === 'reading_only';
     const isWritingOnly   = testType === 'writing_only' || testType === 'writing_full' || testType === 'task1_only' || testType === 'task2_only';
     const date = a.submitted_at ? new Date(a.submitted_at).toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'}) : '';
+    // rawToBand assumes a 40-question paper, so a mini test's band is meaningless.
+    const _mk = (typeof miniKind === 'function') ? miniKind(test) : null;
+    const _mt = _mk ? miniRawTotal(a, _mk, test) : null;
+    const isMiniScored = !!(_mt && _mt.raw !== null && _mt.total);
     const overall = a.overall_band;
 
     // ── Canvas setup: 1080×1920 (Instagram Story) ──
@@ -10050,11 +10088,16 @@ async function downloadResultCard(btn) {
     function rr(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r); ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h); ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r); ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath(); }
 
     // ── Band colour logic ──
-    const bandColor = overall>=7 ? '#34C759' : overall>=6 ? '#FF9500' : '#FF3B30';
-    const bandBg    = overall>=7 ? '#F0FFF4' : overall>=6 ? '#FFF8F0' : '#FFF0F0';
-    const bandBorder= overall>=7 ? '#B8EFC8' : overall>=6 ? '#FFD9A0' : '#FFB3B3';
+    const _pct = isMiniScored ? (_mt.raw / _mt.total) : null;
+    const _good = isMiniScored ? _pct >= 0.7 : overall >= 7;
+    const _mid  = isMiniScored ? _pct >= 0.5 : overall >= 6;
+    const bandColor = _good ? '#34C759' : _mid ? '#FF9500' : '#FF3B30';
+    const bandBg    = _good ? '#F0FFF4' : _mid ? '#FFF8F0' : '#FFF0F0';
+    const bandBorder= _good ? '#B8EFC8' : _mid ? '#FFD9A0' : '#FFB3B3';
     const bandNames = {9:'Expert',8.5:'Very good user',8:'Very good user',7.5:'Good user',7:'Good user',6.5:'Competent user',6:'Competent user',5.5:'Modest user',5:'Modest user',4.5:'Limited user',4:'Limited user'};
-    const bandLabel = bandNames[overall] || (overall ? 'Band '+overall : '');
+    const bandLabel = isMiniScored
+      ? Math.round(_pct * 100) + '% correct'
+      : (bandNames[overall] || (overall ? 'Band '+overall : ''));
 
     // ── Badge text ──
     const badgeText = isListeningOnly ? 'LISTENING TEST' : isReadingOnly ? 'READING TEST' : isWritingOnly ? 'WRITING TEST' : 'IELTS RESULT';
@@ -10066,7 +10109,6 @@ async function downloadResultCard(btn) {
     // ── Very light grey texture strips (subtle) ──
     ctx.fillStyle = '#F2F2F7';
     ctx.fillRect(0, 0, 1080, 8);
-    ctx.fillRect(0, 1912, 1080, 8);
 
     // ── Safe zone: content between y=250 and y=1670 ──
     // All elements placed within this band
@@ -10138,16 +10180,31 @@ async function downloadResultCard(btn) {
     ctx.beginPath(); ctx.arc(540, ringCY, ringR, 0, Math.PI*2);
     ctx.strokeStyle = bandColor; ctx.lineWidth = 6; ctx.stroke();
     // Band number
-    ctx.font = 'bold 140px -apple-system, DM Sans, Arial';
-    ctx.fillStyle = bandColor;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(overall || '—', 540, ringCY - 10);
+    if (isMiniScored) {
+      ctx.font = 'bold 132px -apple-system, DM Sans, Arial';
+      ctx.fillStyle = bandColor;
+      const rawW = ctx.measureText(String(_mt.raw)).width;
+      ctx.font = 'bold 60px -apple-system, DM Sans, Arial';
+      const totW = ctx.measureText('/' + _mt.total).width;
+      const startX = 540 - (rawW + totW) / 2;
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 132px -apple-system, DM Sans, Arial';
+      ctx.fillText(String(_mt.raw), startX, ringCY - 10);
+      ctx.font = 'bold 60px -apple-system, DM Sans, Arial';
+      ctx.fillStyle = '#8E8E93';
+      ctx.fillText('/' + _mt.total, startX + rawW, ringCY + 12);
+      ctx.textAlign = 'center';
+    } else {
+      ctx.font = 'bold 140px -apple-system, DM Sans, Arial';
+      ctx.fillStyle = bandColor;
+      ctx.fillText(overall || '—', 540, ringCY - 10);
+    }
     ctx.textBaseline = 'alphabetic';
-    // "Overall" label
     ctx.font = '30px -apple-system, DM Sans, Arial';
     ctx.fillStyle = '#8E8E93';
-    ctx.fillText('OVERALL', 540, ringCY + ringR - 28);
+    ctx.fillText(isMiniScored ? 'CORRECT' : 'OVERALL', 540, ringCY + ringR - 28);
 
     // Band name pill below ring
     const pillY = ringCY + ringR + 46;
@@ -10165,6 +10222,11 @@ async function downloadResultCard(btn) {
     const gridTop = pillY + 90;
     const pad = 80; const gap = 20;
     const skills = [];
+    if (isMiniScored) {
+      skills.push({label: _mk === 'listening' ? 'Listening' : 'Reading',
+                   score: _mt.raw + ' / ' + _mt.total,
+                   color: _mk === 'listening' ? '#5AC8FA' : '#34C759'});
+    } else {
     if (!isWritingOnly && !isReadingOnly)  skills.push({label:'Listening', score: a.listening_score,   color:'#5AC8FA'});
     if (!isWritingOnly && !isListeningOnly) skills.push({label:'Reading',   score: a.reading_score,     color:'#34C759'});
     if (!isListeningOnly && !isReadingOnly) {
@@ -10179,6 +10241,7 @@ async function downloadResultCard(btn) {
       }
     }
     if (a.speaking_score) skills.push({label:'Speaking', score: a.speaking_score, color:'#AF52DE'});
+    }
 
     const cols = skills.length <= 2 ? skills.length : 2;
     const rows = Math.ceil(skills.length / cols);
@@ -10204,14 +10267,45 @@ async function downloadResultCard(btn) {
       ctx.textAlign = 'center';
       ctx.fillText(sk.label.toUpperCase(), px + pillWd/2, py + 70);
       // Score
-      ctx.font = 'bold 80px -apple-system, DM Sans, Arial';
-      ctx.fillStyle = sk.score ? '#1C1C1E' : '#C7C7CC';
-      ctx.fillText(sk.score || '—', px + pillWd/2, py + 152);
+      const scoreTxt = (sk.score === null || sk.score === undefined || sk.score === '') ? '—' : String(sk.score);
+      let fsz = 80;
+      ctx.font = 'bold ' + fsz + 'px -apple-system, DM Sans, Arial';
+      while (ctx.measureText(scoreTxt).width > pillWd - 40 && fsz > 34) {
+        fsz -= 4; ctx.font = 'bold ' + fsz + 'px -apple-system, DM Sans, Arial';
+      }
+      ctx.fillStyle = (scoreTxt === '—') ? '#C7C7CC' : '#1C1C1E';
+      ctx.fillText(scoreTxt, px + pillWd/2, py + 152);
     });
+
+    // ─── Footer ───
+    // The pill grid ends around y=1300 on a 1920-tall canvas; without this the
+    // bottom third reads as an unfinished crop rather than a designed card.
+    const footY = 1690;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#E5E5EA';
+    ctx.fillRect(300, footY, 480, 2);
+
+    ctx.font = 'bold 46px -apple-system, DM Sans, Arial';
+    const fSeve = ctx.measureText('Seve').width, fN = ctx.measureText('n').width, fIne = ctx.measureText('ine').width;
+    let fx = (1080 - (fSeve + fN + fIne)) / 2;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#1C1C1E'; ctx.fillText('Seve', fx, footY + 76);
+    ctx.fillStyle = '#007AFF'; ctx.fillText('n', fx + fSeve, footY + 76);
+    ctx.fillStyle = '#1C1C1E'; ctx.fillText('ine', fx + fSeve + fN, footY + 76);
+
+    ctx.textAlign = 'center';
+    ctx.font = '28px -apple-system, DM Sans, Arial';
+    ctx.fillStyle = '#8E8E93';
+    ctx.fillText('IELTS MOCK TEST RESULT' + (date ? '  ·  ' + date.toUpperCase() : ''), 540, footY + 128);
+
+    // brand bar along the bottom edge
+    ctx.fillStyle = '#007AFF';
+    ctx.fillRect(0, 1904, 1080, 16);
 
     // ─── Download ───
     const link = document.createElement('a');
-    link.download = 'IELTS_Result_' + studentName.replace(/\s+/g,'_') + '.png';
+    const slug = x => String(x || '').replace(/[^\w\s-]/g,'').trim().replace(/\s+/g,'_').slice(0,40);
+    link.download = 'Sevenine_' + slug(studentName) + '_' + slug(test.title) + '.png';
     link.href = canvas.toDataURL('image/png');
     link.click();
   } catch(e) { alert('Could not generate image: ' + (e.message||String(e))); console.error(e); }
