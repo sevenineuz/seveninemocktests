@@ -4957,11 +4957,16 @@ let currentSection = 'listening'; // listening | reading | writing
 /* ════════════════════════════════════════════
    BAND CONVERSION (IELTS standard)
    ════════════════════════════════════════════ */
+/* Official raw-to-band conversions. Listening and Academic Reading are NOT the
+   same table — Reading is graded harder in the middle of the range — and both
+   were previously wrong (a single shared table with 20:5.5, which made 19/40
+   come out as band 5 instead of 5.5). Each key is the LOWEST raw score earning
+   that band, read downwards by rawToBand(). */
 const LISTENING_BANDS = {
-  39:9, 37:8.5, 35:8, 33:7.5, 30:7, 27:6.5, 23:6, 20:5.5, 16:5, 13:4.5, 10:4, 7:3.5, 5:3, 3:2.5
+  39:9, 37:8.5, 35:8, 32:7.5, 30:7, 26:6.5, 23:6, 18:5.5, 16:5, 13:4.5, 10:4, 6:3.5, 4:3, 3:2.5, 2:2, 1:1
 };
 const READING_BANDS = {
-  39:9, 37:8.5, 35:8, 33:7.5, 30:7, 27:6.5, 23:6, 20:5.5, 16:5, 13:4.5, 10:4, 7:3.5, 5:3, 3:2.5
+  39:9, 37:8.5, 35:8, 33:7.5, 30:7, 27:6.5, 23:6, 19:5.5, 15:5, 13:4.5, 10:4, 8:3.5, 6:3, 4:2.5, 3:2, 1:1
 };
 function rawToBand(raw, table) {
   const keys = Object.keys(table).map(Number).sort((a,b)=>b-a);
