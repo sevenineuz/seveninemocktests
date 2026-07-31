@@ -757,6 +757,18 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--g6);colo
 .pub-empty{font-size:12px;color:var(--g4);padding:10px 2px 16px;}
 .pt-skip{font-size:10px;color:var(--g4);font-style:italic;}
 .pt-note{font-size:10px;color:var(--g4);line-height:1.5;margin-top:9px;}
+.se-row{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
+.se-l{font-size:12px;font-weight:600;color:var(--g2);min-width:110px;}
+.se-i{width:92px;font-family:'DM Sans',sans-serif;font-size:14px;color:var(--g1);
+  background:var(--white);border:1.5px solid var(--g5);border-radius:9px;padding:7px 10px;outline:none;}
+.se-i:focus{border-color:var(--blue);}
+.se-i:disabled{background:var(--g6);color:var(--g3);}
+.se-suffix{font-size:11px;color:var(--g4);}
+.se-derived{font-size:12px;font-weight:700;color:var(--blue);}
+.se-overall{border-top:1px solid var(--g5);padding-top:12px;margin-top:14px;}
+.se-chk{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--g3);cursor:pointer;}
+.se-note{font-size:11px;line-height:1.55;color:var(--g4);margin-top:10px;}
+.se-note.se-warn{color:var(--orange);}
 @media (max-width:560px){
   .pt-head,.pt-row{grid-template-columns:1fr 32px 32px 32px 32px 46px;}
   .pt-head span:nth-child(2),.pt-row span:nth-child(2){display:none;}
@@ -1535,6 +1547,11 @@ select.editor-input{cursor:pointer;}
 </div>
 
 <!-- Speaking Grade Panel -->
+<div class="modal-overlay" id="score-edit-modal" style="align-items:flex-start;padding:20px;overflow-y:auto;">
+  <div class="modal-box" style="max-width:520px;width:100%;padding:0;overflow:hidden;">
+    <div id="score-edit-body"></div>
+  </div>
+</div>
 <div class="modal-overlay" id="speaking-grade-modal" style="align-items:flex-start;padding:20px;overflow-y:auto;">
   <div class="modal-box" style="max-width:600px;width:100%;padding:0;overflow:hidden;border-radius:18px;">
     <div style="background:var(--g1);color:var(--white);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;">
@@ -8882,6 +8899,7 @@ async function loadAdminResults() {
         ${canGradeSp ? `<button class="btn btn-ghost btn-sm" data-spid="${a.id}" data-spname="${userMap[a.user_id]||'Student'}" onclick="openSpeakingGrade(this.dataset.spid,this.dataset.spname)">Grade Sp</button>` : (a.speaking_score ? `<span style="font-size:11px;font-weight:700;color:var(--green);">Sp:${a.speaking_score}</span>` : '')}
         <button class="btn btn-ghost btn-sm" onclick="viewResults('${a.id}')">View</button>
         <button class="btn btn-ghost btn-sm" data-aid="${a.id}" data-name="${(userMap[a.user_id]||'Student').replace(/"/g,'&quot;')}" onclick="adminExportResult(this)" title="Download a branded result image">&#8595; Image</button>
+        ${isOwner() ? `<button class="btn btn-ghost btn-sm" onclick="openScoreEditor('${a.id}')" title="Owner only — manually change this student's scores">Edit scores</button>` : ''}
       </div>`;
 
       return `<tr>
@@ -10099,6 +10117,222 @@ function showEditorView() {
 /* ════════════════════════════════════════════
    DOWNLOAD RESULT CARD
    ════════════════════════════════════════════ */
+/* ── Owner-only manual score editing ─────────────────────────────────────────
+   Scores live in three places that must agree: the band column (listening_score
+   / reading_score), the raw column (listening_raw / reading_raw) and _raw/_total
+   inside the results JSON, which is what the results screen actually prints. A
+   patch that touches only one of them makes the UI contradict itself, so every
+   save here rewrites all three.
+
+   Listening/Reading are edited as a RAW COUNT and the band is derived with the
+   same rawToBand() the auto-grader uses, so a later re-grade reproduces the same
+   numbers instead of silently shifting them. Writing and Speaking have no raw
+   count and are entered as bands directly. */
+let _seAttempt = null, _seTest = null;
+
+function closeScoreEditor() {
+  const m = document.getElementById('score-edit-modal');
+  if (m) m.classList.remove('show');
+}
+
+function isOwner() { return !!(session && session.role === 'owner'); }
+
+function _seNum(id) {
+  const el = document.getElementById(id);
+  if (!el || el.value === '') return null;
+  const v = Number(el.value);
+  return isNaN(v) ? null : v;
+}
+
+async function openScoreEditor(attemptId) {
+  if (!isOwner()) { alert('Only the owner can change scores.'); return; }
+  try {
+    const rows = await dbGet('attempts', `id=eq.${attemptId}&select=*`);
+    if (!rows || !rows.length) { alert('Attempt not found.'); return; }
+    _seAttempt = rows[0];
+    await hydrateTest(_seAttempt.test_id);
+    _seTest = ALL_TESTS.find(t => t.id === _seAttempt.test_id) || {title: _seAttempt.test_id};
+
+    const tt = _seTest.test_type || _seTest.type || 'full';
+    const mk = (typeof miniKind === 'function') ? miniKind(_seTest) : null;
+    const isWritingOnly = ['writing_only','writing_full','task1_only','task2_only'].includes(tt);
+
+    const lTot = (typeof answerKeyCount === 'function') ? answerKeyCount(_seTest, 'listening') : null;
+    const rTot = (typeof answerKeyCount === 'function') ? answerKeyCount(_seTest, 'reading') : null;
+    const lCur = (typeof miniRawTotal === 'function') ? miniRawTotal(_seAttempt, 'listening', _seTest) : {raw:null,total:null};
+    const rCur = (typeof miniRawTotal === 'function') ? miniRawTotal(_seAttempt, 'reading',   _seTest) : {raw:null,total:null};
+
+    function rawRow(kind, label, cur, total) {
+      const t = total || cur.total || 40;
+      return '<div class="se-row"><label class="se-l">' + label + '</label>' +
+        '<input id="se-' + kind + '" type="number" min="0" max="' + t + '" step="1" class="se-i" ' +
+          'value="' + (cur.raw === null || cur.raw === undefined ? '' : cur.raw) + '" oninput="seRefresh()">' +
+        '<span class="se-suffix">/ ' + t + ' correct</span>' +
+        '<span class="se-derived" id="se-' + kind + '-band"></span>' +
+        '<input type="hidden" id="se-' + kind + '-total" value="' + t + '"></div>';
+    }
+    function bandRow(id, label, val) {
+      return '<div class="se-row"><label class="se-l">' + label + '</label>' +
+        '<input id="' + id + '" type="number" min="0" max="9" step="0.5" class="se-i" ' +
+          'value="' + (val === null || val === undefined ? '' : val) + '" oninput="seRefresh()">' +
+        '<span class="se-suffix">band 0&ndash;9</span></div>';
+    }
+
+    let body = '';
+    if (mk === 'listening' || (!mk && !isWritingOnly)) body += rawRow('l', 'Listening', lCur, lTot);
+    if (mk === 'reading'   || (!mk && !isWritingOnly)) body += rawRow('r', 'Reading',   rCur, rTot);
+    if (!mk) {
+      body += bandRow('se-w1', 'Writing Task 1', _seAttempt.writing_task1_score);
+      body += bandRow('se-w2', 'Writing Task 2', _seAttempt.writing_task2_score);
+      if (!isWritingOnly) body += bandRow('se-sp', 'Speaking', _seAttempt.speaking_score);
+    }
+
+    const overallRow = mk ? '' :
+      '<div class="se-row se-overall"><label class="se-l">Overall band</label>' +
+        '<input id="se-ov" type="number" min="0" max="9" step="0.5" class="se-i" ' +
+          'value="' + (_seAttempt.overall_band === null || _seAttempt.overall_band === undefined ? '' : _seAttempt.overall_band) + '" disabled>' +
+        '<label class="se-chk"><input type="checkbox" id="se-ov-manual" onchange="seRefresh()"> set manually</label>' +
+      '</div>';
+
+    const auditCount = Array.isArray(_seAttempt.score_audit) ? _seAttempt.score_audit.length : 0;
+
+    document.getElementById('score-edit-body').innerHTML =
+      '<div style="padding:20px 22px;">' +
+        '<div style="font-family:\'DM Serif Display\',serif;font-size:19px;margin-bottom:2px;">Edit scores</div>' +
+        '<div style="font-size:12px;color:var(--g3);margin-bottom:16px;">' +
+          escapeHtmlSafe(_seTest.title || _seAttempt.test_id) + '</div>' +
+        body + overallRow +
+        (mk ? '<div class="se-note">Mini tests are reported as a raw count. No band score is shown to students.</div>'
+            : '<div class="se-note">Listening and Reading are entered as a raw count; the band is derived the same way the auto-grader derives it, so a later re-grade will not change these numbers.</div>') +
+        '<div class="se-note se-warn">The per-question answer review still reflects the original marking. Changing the raw count here will not make it agree.</div>' +
+        (auditCount ? '<div class="se-note">This attempt has been edited ' + auditCount + ' time' + (auditCount>1?'s':'') + ' before.</div>' : '') +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px;">' +
+          '<button class="btn btn-ghost btn-sm" onclick="closeScoreEditor()">Cancel</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="saveManualScores()">Save scores</button>' +
+        '</div>' +
+        '<div id="se-msg" style="font-size:12px;margin-top:10px;"></div>' +
+      '</div>';
+    document.getElementById('score-edit-modal').classList.add('show');
+    seRefresh();
+  } catch (e) {
+    alert('Could not open the editor: ' + (e.message || e));
+  }
+}
+
+// Live-derive the band from each raw count, and the overall from the parts.
+function seRefresh() {
+  function band(kind) {
+    const el = document.getElementById('se-' + kind);
+    if (!el) return null;
+    const totEl = document.getElementById('se-' + kind + '-total');
+    const total = totEl ? Number(totEl.value) : 40;
+    const raw = el.value === '' ? null : Number(el.value);
+    const out = document.getElementById('se-' + kind + '-band');
+    if (raw === null || isNaN(raw)) { if (out) out.textContent = ''; return null; }
+    // A band only means anything on a full 40-question paper.
+    if (total !== 40) { if (out) out.textContent = ''; return null; }
+    const b = rawToBand(raw, kind === 'l' ? LISTENING_BANDS : READING_BANDS);
+    if (out) out.textContent = '→ band ' + b;
+    return b;
+  }
+  const lb = band('l'), rb = band('r');
+  const ovEl = document.getElementById('se-ov');
+  if (!ovEl) return;
+  const manual = document.getElementById('se-ov-manual');
+  ovEl.disabled = !(manual && manual.checked);
+  if (manual && manual.checked) return;
+  const w1 = _seNum('se-w1'), w2 = _seNum('se-w2');
+  const hasW1 = w1 !== null, hasW2 = w2 !== null;
+  const w = (hasW1 && hasW2) ? Math.round((w1*0.333 + w2*0.667)*2)/2 : (hasW1 ? w1 : (hasW2 ? w2 : null));
+  const sp = _seNum('se-sp');
+  const parts = [lb, rb, w, sp].filter(v => v !== null && v !== undefined);
+  ovEl.value = parts.length ? (Math.round((parts.reduce((a,b)=>a+b,0) / parts.length) * 2) / 2) : '';
+}
+
+async function saveManualScores() {
+  if (!isOwner()) { alert('Only the owner can change scores.'); return; }
+  const msg = document.getElementById('se-msg');
+  const fail = t => { msg.style.color = 'var(--red)'; msg.textContent = t; };
+  const a = _seAttempt;
+  const patch = {};
+  const before = {
+    listening_score: a.listening_score, reading_score: a.reading_score,
+    listening_raw: a.listening_raw, reading_raw: a.reading_raw,
+    writing_task1_score: a.writing_task1_score, writing_task2_score: a.writing_task2_score,
+    speaking_score: a.speaking_score, overall_band: a.overall_band
+  };
+
+  // Raw-scored sections: band, raw column and results._raw must move together.
+  for (const kind of ['l','r']) {
+    const el = document.getElementById('se-' + kind);
+    if (!el) continue;
+    const totEl = document.getElementById('se-' + kind + '-total');
+    const total = totEl ? Number(totEl.value) : 40;
+    if (el.value === '') continue;
+    const raw = Number(el.value);
+    if (isNaN(raw) || raw < 0 || raw > total || Math.floor(raw) !== raw) {
+      return fail('Raw scores must be whole numbers between 0 and ' + total + '.');
+    }
+    const full = kind === 'l' ? 'listening' : 'reading';
+    const results = Object.assign({}, (a[full + '_results'] && typeof a[full + '_results'] === 'object') ? a[full + '_results'] : {});
+    results._raw = raw;
+    results._total = total;
+    results._manual = true;      // marks the breakdown as no longer matching the count
+    patch[full + '_results'] = results;
+    patch[full + '_raw'] = raw;
+    patch[full + '_score'] = rawToBand(raw, kind === 'l' ? LISTENING_BANDS : READING_BANDS);
+  }
+
+  // Band-scored sections.
+  const bandFields = [['se-w1','writing_task1_score'], ['se-w2','writing_task2_score'], ['se-sp','speaking_score']];
+  for (const [id, col] of bandFields) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (el.value === '') { patch[col] = null; continue; }
+    const v = Number(el.value);
+    if (isNaN(v) || v < 0 || v > 9 || Math.round(v*2) !== v*2) return fail('Bands must be 0–9 in half steps.');
+    patch[col] = v;
+  }
+
+  const ovEl = document.getElementById('se-ov');
+  if (ovEl) {
+    if (ovEl.value === '') patch.overall_band = null;
+    else {
+      const v = Number(ovEl.value);
+      if (isNaN(v) || v < 0 || v > 9 || Math.round(v*2) !== v*2) return fail('Overall band must be 0–9 in half steps.');
+      patch.overall_band = v;
+    }
+  }
+
+  if (!Object.keys(patch).length) return fail('Nothing to save.');
+
+  const audit = Array.isArray(a.score_audit) ? a.score_audit.slice() : [];
+  audit.push({
+    at: new Date().toISOString(),
+    by: session ? session.id : null,
+    by_name: session ? (session.full_name || session.username) : null,
+    before: before,
+    after: {
+      listening_score: patch.listening_score !== undefined ? patch.listening_score : before.listening_score,
+      reading_score:   patch.reading_score   !== undefined ? patch.reading_score   : before.reading_score,
+      listening_raw:   patch.listening_raw   !== undefined ? patch.listening_raw   : before.listening_raw,
+      reading_raw:     patch.reading_raw     !== undefined ? patch.reading_raw     : before.reading_raw,
+      writing_task1_score: patch.writing_task1_score, writing_task2_score: patch.writing_task2_score,
+      speaking_score: patch.speaking_score, overall_band: patch.overall_band
+    }
+  });
+  patch.score_audit = audit;
+
+  msg.style.color = 'var(--g3)'; msg.textContent = 'Saving…';
+  try {
+    await dbPatch('attempts', patch, `id=eq.${a.id}`);
+    msg.style.color = 'var(--green)'; msg.textContent = 'Saved.';
+    setTimeout(function(){ closeScoreEditor(); loadAdminResults(); }, 700);
+  } catch (e) {
+    fail('Save failed: ' + (e.message || e));
+  }
+}
+
 /* Admin export. Same card as the student's Share button, so a result the school
    sends out looks identical to one a student shares themselves. */
 async function adminExportResult(btn) {
