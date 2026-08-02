@@ -98,11 +98,25 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--g6);colo
 .test-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;}
 .test-card{background:var(--white);border-radius:14px;overflow:hidden;
   box-shadow:0 1px 3px rgba(0,0,0,.06),0 4px 12px rgba(0,0,0,.04);
-  border:1.5px solid var(--g5);transition:transform .15s,box-shadow .15s;}
+  border:1.5px solid var(--g5);transition:transform .15s,box-shadow .15s;
+  /* Cards stretch to equal height in the grid, but their internals did not, so the
+     buttons sat at whatever depth the description happened to end. Flex column +
+     an absorbing body pins the footer to the bottom of every card. */
+  display:flex;flex-direction:column;height:100%;}
 .test-card:hover{transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,.1);}
-.test-card-body{padding:16px 16px 12px;}
+.test-card-body{padding:16px 16px 12px;flex:1;display:flex;flex-direction:column;min-height:0;}
 .test-card-title{font-family:'DM Serif Display',serif;font-size:15px;color:var(--g1);margin-bottom:6px;}
-.test-card-desc{font-size:12px;color:var(--g3);line-height:1.5;margin-bottom:10px;}
+.test-card-desc{font-size:12px;color:var(--g3);line-height:1.5;margin-bottom:10px;
+  /* Reserve two lines whether the text needs them or not, so everything below the
+     description shares a baseline instead of drifting from card to card. */
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  min-height:36px;}
+/* The body is now a flex column, whose default align-items:stretch would blow the
+   inline tag/lock pills out to full card width. Only they need shrinking; the
+   title, description and score block still want the full width. */
+.test-card-body > span{align-self:flex-start;}
+.test-card-score{margin-top:auto;}
+.test-card-foot{margin-top:auto;}
 .test-card-badges{display:flex;gap:5px;flex-wrap:wrap;}
 .badge{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
   padding:2px 8px;border-radius:10px;}
@@ -5930,7 +5944,7 @@ async function renderAvailableTests() {
   card += '</div>';
 
   // Footer buttons
-  card += '<div style="border-top:.5px solid var(--g5);padding:10px 14px;display:flex;gap:6px;flex-wrap:wrap;">';
+  card += '<div class="test-card-foot" style="border-top:.5px solid var(--g5);padding:10px 14px;display:flex;gap:6px;flex-wrap:wrap;">';
   if (isFull) {
     var tL = t.time_listening || 40, tR = t.time_reading || 60, tW = t.time_writing || 60;
     var tTotal = tL + tR + tW;
