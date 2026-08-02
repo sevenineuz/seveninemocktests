@@ -114,7 +114,11 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--g6);colo
 /* The body is now a flex column, whose default align-items:stretch would blow the
    inline tag/lock pills out to full card width. Only they need shrinking; the
    title, description and score block still want the full width. */
-.test-card-body > span{align-self:flex-start;}
+.test-card-pills{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:7px;}
+/* Fix the pill height so the padlock glyph in the lock badge cannot make a locked
+   card's header taller than an unlocked one, which nudged the whole card down. */
+.test-card-pills > span{display:inline-flex;align-items:center;height:17px;
+  box-sizing:border-box;line-height:1;}
 .test-card-score{margin-top:auto;}
 .test-card-foot{margin-top:auto;}
 .test-card-badges{display:flex;gap:5px;flex-wrap:wrap;}
@@ -5932,12 +5936,16 @@ async function renderAvailableTests() {
   // Lock
   var isLocked = testLocks && !!testLocks[t.id];
   var lk = isLocked ? ' data-locked="1"' : '';
-  var lockBadge = isLocked ? '<div style="display:inline-flex;align-items:center;gap:4px;background:rgba(255,59,48,.1);color:var(--red);font-size:9px;font-weight:500;padding:2px 8px;border-radius:8px;margin-bottom:6px;">&#128274; Locked</div>' : '';
+  var lockBadge = isLocked ? '<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(255,59,48,.1);color:var(--red);font-size:9px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:20px;">&#128274; Locked</span>' : '';
 
   var card = '<div class="test-card">';
   card += '<div class="test-card-body">';
-  card += '<span style="font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;padding:2px 8px;border-radius:20px;display:inline-block;margin-bottom:7px;'+tagStyle+'">'+tagLabel+'</span>';
-  if (lockBadge) card += '<br>' + lockBadge;
+  // Type and lock pills sit on one row. The lock badge used to follow a <br>, which
+  // made locked cards a line taller than the rest and threw the row out of alignment.
+  card += '<div class="test-card-pills">' +
+    '<span style="font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;padding:2px 8px;border-radius:20px;'+tagStyle+'">'+tagLabel+'</span>' +
+    lockBadge +
+  '</div>';
   card += '<div class="test-card-title">'+t.title+'</div>';
   card += '<div class="test-card-desc">'+(t.description||'')+'</div>';
   card += scoreBlock;
