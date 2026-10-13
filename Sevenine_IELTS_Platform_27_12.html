@@ -64,6 +64,8 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--g6);colo
 .btn-success{background:var(--green);color:var(--white);}
 .btn-sm{padding:5px 11px;font-size:11px;border-radius:8px;}
 .btn-icon{width:32px;height:32px;padding:0;justify-content:center;border-radius:8px;}
+.btn-fs{width:30px;height:30px;padding:0;justify-content:center;border-radius:8px;flex-shrink:0;}
+.btn-fs svg{width:15px;height:15px;display:block;}
 
 /* ── VIEWS ── */
 .view{display:none;min-height:100vh;}
@@ -946,6 +948,7 @@ select.editor-input{cursor:pointer;}
       <div class="role-dot" id="top-role-dot"></div>
       <span id="top-username">User</span>
     </div>
+    <span class="fs-slot"></span>
     <button class="btn btn-ghost btn-sm" onclick="logout()">Sign out</button>
   </div>
 </div>
@@ -6484,6 +6487,7 @@ async function openTestSection(testId, section) {
 }
 
 function handleVisibilityChange() {
+  if (inFsTransition()) return;
   if (document.hidden) {
     tabSwitchCount++;
     saveAnswersSilent();
@@ -6532,6 +6536,7 @@ window.addEventListener('beforeunload', e => {
 // Block window blur (switching apps/windows)
 window.addEventListener('blur', () => {
   if (!document.getElementById('view-test')?.classList.contains('active')) return;
+  if (inFsTransition()) return;
   tabSwitchCount++;
   saveAnswersSilent();
   updateTabCount();
@@ -6539,8 +6544,52 @@ window.addEventListener('blur', () => {
 
 window.addEventListener('focus', () => {
   if (!document.getElementById('view-test')?.classList.contains('active')) return;
+  if (inFsTransition()) return;
   if (tabSwitchCount > 0) showAnticheatOverlay();
 });
+
+/* ── FULLSCREEN ──
+   Toggle in both top bars. Entering/leaving fullscreen can briefly blur the
+   window (macOS animates it into its own Space), so blur/visibility events in
+   the 1.5s around a switch are not counted as tab switches. */
+let _fsTransitionUntil = 0;
+function inFsTransition() { return Date.now() < _fsTransitionUntil; }
+function fsSupported() {
+  const el = document.documentElement;
+  return !!(el.requestFullscreen || el.webkitRequestFullscreen);
+}
+function isFullscreen() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+const FS_ICON_ENTER = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>';
+const FS_ICON_EXIT = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4"/></svg>';
+function fsButtonHtml() {
+  if (!fsSupported()) return '';
+  const on = isFullscreen();
+  return '<button class="btn btn-ghost btn-fs" onclick="toggleFullscreen()" title="' + (on ? 'Exit full screen' : 'Full screen') +
+    '" aria-label="' + (on ? 'Exit full screen' : 'Full screen') + '">' + (on ? FS_ICON_EXIT : FS_ICON_ENTER) + '</button>';
+}
+function renderFsButtons() {
+  document.querySelectorAll('.fs-slot').forEach(s => { s.innerHTML = fsButtonHtml(); });
+  document.querySelectorAll('#test-top-bar .btn-fs').forEach(b => { b.outerHTML = fsButtonHtml(); });
+}
+function toggleFullscreen() {
+  _fsTransitionUntil = Date.now() + 1500;
+  try {
+    if (isFullscreen()) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      const el = document.documentElement;
+      const p = (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+      if (p && p.catch) p.catch(() => {});
+    }
+  } catch (e) { console.error(e); }
+}
+['fullscreenchange', 'webkitfullscreenchange'].forEach(evt => {
+  document.addEventListener(evt, () => {
+    _fsTransitionUntil = Date.now() + 1500;
+    renderFsButtons();
+  });
+});
+document.addEventListener('DOMContentLoaded', renderFsButtons);
 
 function buildTestTopBar(section) {
   const _ttNav = (currentTest && currentTest.test_type) || (currentTest && currentTest.type) || 'full';
@@ -6564,6 +6613,7 @@ function buildTestTopBar(section) {
       '<div class="section-nav">' + navHtml + '</div>' +
     '</div>' +
     '<div style="display:flex;align-items:center;gap:12px;">' +
+      fsButtonHtml() +
       '<div class="tab-count">Tabs switched: <span class="tab-count-num" id="top-tab-count">' + tabSwitchCount + '</span></div>' +
       '<div class="timer-block">' +
         '<div class="timer-label">' + section.charAt(0).toUpperCase()+section.slice(1) + '</div>' +
